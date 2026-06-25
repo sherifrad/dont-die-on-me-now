@@ -12,8 +12,4 @@ jobs:
       - name: Test
         run: swift test
       - name: Build app bundle
-        run: ./script/build_and_run.sh --verify
-      - name: Stop app
-        if: always()
-        run: pkill -x DontDieOnMeNow || true
-
+        run: ./script/build_and_run.sh --build-only

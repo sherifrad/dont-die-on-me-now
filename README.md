@@ -51,6 +51,12 @@ Verify the staged app launches:
 ./script/build_and_run.sh --verify
 ```
 
+Build the app bundle without launching it:
+
+```sh
+./script/build_and_run.sh --build-only
+```
+
 Create a local zip:
 
 ```sh
@@ -85,4 +91,3 @@ The tradeoff is that each toggle uses the normal macOS administrator prompt.
 ## License
 
 No license has been selected yet. Add one before making the repository public.
-
