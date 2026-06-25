@@ -2,7 +2,7 @@ import Foundation
 
 struct PowerSettingsClient {
     var readSnapshot: () throws -> PowerSettingsSnapshot
-    var setSleepDisabled: (_ disabled: Bool) throws -> Void
+    var setSleepDisabled: (_ disabled: Bool, _ timedRestore: TimedRestore?, _ sessionToken: String?) throws -> Void
 }
 
 extension PowerSettingsClient {
@@ -21,8 +21,12 @@ extension PowerSettingsClient {
                 }
                 return PowerSettingsParser.parse(result.stdout)
             },
-            setSleepDisabled: { disabled in
-                let script = PrivilegedPowerCommand.appleScript(disabled: disabled)
+            setSleepDisabled: { disabled, timedRestore, sessionToken in
+                let script = PrivilegedPowerCommand.appleScript(
+                    disabled: disabled,
+                    timedRestore: timedRestore,
+                    sessionToken: sessionToken
+                )
                 let result = try runner.run("/usr/bin/osascript", arguments: ["-e", script])
                 guard result.terminationStatus == 0 else {
                     if result.stderr.localizedCaseInsensitiveContains("User canceled") {

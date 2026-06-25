@@ -9,11 +9,11 @@ final class PowerSettingsStoreTests: XCTestCase {
             readSnapshot: {
                 PowerSettingsSnapshot(sleepSetting: .normal, rawOutput: "SleepDisabled 0")
             },
-            setSleepDisabled: { _ in
+            setSleepDisabled: { _, _, _ in
                 setCallCount += 1
             }
         )
-        let store = PowerSettingsStore(client: client)
+        let store = PowerSettingsStore(client: client, defaults: makeDefaults())
 
         XCTAssertEqual(store.actionTitle, "Refresh State")
         store.performPrimaryAction()
@@ -33,9 +33,9 @@ final class PowerSettingsStoreTests: XCTestCase {
             readSnapshot: {
                 PowerSettingsSnapshot(sleepSetting: .normal, rawOutput: "SleepDisabled 0")
             },
-            setSleepDisabled: { _ in }
+            setSleepDisabled: { _, _, _ in }
         )
-        let store = PowerSettingsStore(client: client)
+        let store = PowerSettingsStore(client: client, defaults: makeDefaults())
         store.refresh()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
@@ -60,11 +60,11 @@ final class PowerSettingsStoreTests: XCTestCase {
             readSnapshot: {
                 PowerSettingsSnapshot(sleepSetting: .normal, rawOutput: "SleepDisabled 0")
             },
-            setSleepDisabled: { _ in
+            setSleepDisabled: { _, _, _ in
                 throw PowerSettingsClientError.userCancelled
             }
         )
-        let store = PowerSettingsStore(client: client)
+        let store = PowerSettingsStore(client: client, defaults: makeDefaults())
         store.refresh()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
@@ -78,5 +78,74 @@ final class PowerSettingsStoreTests: XCTestCase {
         }
 
         wait(for: [expectation], timeout: 1)
+    }
+
+    func testDefaultAwakeSessionIsSixHours() {
+        let expectation = expectation(description: "start completes")
+        var capturedRestore: TimedRestore?
+        var readCount = 0
+        let client = PowerSettingsClient(
+            readSnapshot: {
+                readCount += 1
+                return PowerSettingsSnapshot(sleepSetting: readCount == 1 ? .normal : .disabled, rawOutput: "")
+            },
+            setSleepDisabled: { _, timedRestore, _ in
+                capturedRestore = timedRestore
+            }
+        )
+        let store = PowerSettingsStore(client: client, defaults: makeDefaults())
+        store.refresh()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
+            store.startAwakeSession()
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
+            XCTAssertEqual(capturedRestore?.seconds, 21_600)
+            XCTAssertNotNil(store.activeUntil)
+            XCTAssertEqual(store.snapshot.sleepSetting, .disabled)
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
+    func testIndefiniteDurationDoesNotScheduleRestore() {
+        let expectation = expectation(description: "start completes")
+        var capturedRestore: TimedRestore?
+        var readCount = 0
+        let client = PowerSettingsClient(
+            readSnapshot: {
+                readCount += 1
+                return PowerSettingsSnapshot(sleepSetting: readCount == 1 ? .normal : .disabled, rawOutput: "")
+            },
+            setSleepDisabled: { _, timedRestore, _ in
+                capturedRestore = timedRestore
+            }
+        )
+        let defaults = makeDefaults()
+        let store = PowerSettingsStore(client: client, defaults: defaults)
+        store.setSelectedDuration(.indefinite)
+        store.refresh()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
+            store.startAwakeSession()
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
+            XCTAssertNil(capturedRestore)
+            XCTAssertNil(store.activeUntil)
+            XCTAssertEqual(defaults.string(forKey: "selectedDuration"), AwakeDuration.indefinite.rawValue)
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
+    private func makeDefaults() -> UserDefaults {
+        let suiteName = "DontDieOnMeNowTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
     }
 }

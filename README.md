@@ -6,14 +6,24 @@ It is designed for workflows where Codex, Claude Code, builds, tests, or other l
 
 ## What It Does
 
-Don't Die On Me Now toggles macOS system sleep by running Apple's `pmset` power setting:
+Don't Die On Me Now starts an awake session by running Apple's `pmset` power setting:
 
 ```sh
 pmset -a disablesleep 1
 pmset -a disablesleep 0
 ```
 
-When you click the menu bar action, macOS shows the standard administrator prompt. The app does not store your password, install a daemon, start a login item, use the network, or run background services.
+By default, an awake session lasts 6 hours. You can change the duration from the menu bar before starting or restarting a session:
+
+- 1 hour
+- 3 hours
+- 6 hours
+- 12 hours
+- Until I restore it
+
+Timed sessions schedule a delayed restore command at the same time sleep is disabled, so normal sleep can be restored even if the menu bar app is not frontmost.
+
+When you click the menu bar action, macOS shows the standard administrator prompt. The app does not store your password, install a daemon, start a login item, or use the network. Timed sessions create a one-shot delayed restore process so sleep can be re-enabled later without a second prompt.
 
 ## Why This Exists
 
@@ -44,6 +54,14 @@ Build and launch the app bundle:
 ```
 
 The app appears in the macOS menu bar, not the Dock. Click the menu bar item to enable or disable sleep.
+
+The menu bar icon changes by mode:
+
+- moon: normal sleep
+- timer: timed awake session
+- infinity: awake until manually restored
+- warning: timer expired but sleep still appears disabled
+- question mark: state unknown
 
 Install the staged app for local testing:
 
@@ -91,10 +109,11 @@ This is intentionally small:
 - no telemetry
 - no network access
 - no password storage
+- no persistent background service
 
 The tradeoff is that each toggle uses the normal macOS administrator prompt.
 
-`disablesleep` is visible in `pmset -g` on supported systems, but it is not documented in every local `pmset` man page. If your Mac does not accept the setting, the app should show the underlying `pmset` or administrator-prompt error and leave the current state unchanged.
+`disablesleep` is visible in `pmset -g` on supported systems, but it is not documented in every local `pmset` man page. Apple documents `sudo pmset -a disablesleep 1` in an OS X Server support article, and this app verifies the setting after each change. If your Mac does not accept the setting, the app should show the underlying `pmset` or administrator-prompt error and leave the current state unchanged.
 
 ## License
 

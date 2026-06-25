@@ -39,6 +39,37 @@ struct MenuBarView: View {
             .buttonStyle(.borderedProminent)
             .disabled(store.isWorking)
 
+            Picker(
+                "Duration",
+                selection: Binding(
+                    get: { store.selectedDuration },
+                    set: { store.setSelectedDuration($0) }
+                )
+            ) {
+                ForEach(AwakeDuration.allCases) { duration in
+                    Text(duration.label).tag(duration)
+                }
+            }
+            .pickerStyle(.menu)
+            .disabled(store.isWorking)
+
+            Text(store.sessionSummary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if store.canRestartTimer {
+                Button {
+                    store.startAwakeSession()
+                } label: {
+                    HStack {
+                        Image(systemName: store.selectedDuration == .indefinite ? "infinity.circle" : "timer")
+                        Text("Restart Timer")
+                    }
+                }
+                .disabled(store.isWorking)
+            }
+
             if let statusMessage = store.statusMessage {
                 Text(statusMessage)
                     .font(.caption)
@@ -74,6 +105,9 @@ struct MenuBarView: View {
         .frame(width: 330)
         .onAppear {
             store.refresh()
+        }
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+            store.tick()
         }
         .alert(item: $store.alert) { alert in
             Alert(
