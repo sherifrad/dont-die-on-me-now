@@ -29,7 +29,10 @@ extension PowerSettingsClient {
                 )
                 let result = try runner.run("/usr/bin/osascript", arguments: ["-e", script])
                 guard result.terminationStatus == 0 else {
-                    if result.stderr.localizedCaseInsensitiveContains("User canceled") {
+                    if PowerSettingsClientError.isUserCancellation(
+                        stdout: result.stdout,
+                        stderr: result.stderr
+                    ) {
                         throw PowerSettingsClientError.userCancelled
                     }
                     throw PowerSettingsClientError.commandFailed(
@@ -46,6 +49,13 @@ extension PowerSettingsClient {
 enum PowerSettingsClientError: LocalizedError, Equatable {
     case commandFailed(command: String, status: Int32, stderr: String)
     case userCancelled
+
+    static func isUserCancellation(stdout: String, stderr: String) -> Bool {
+        let output = "\(stdout)\n\(stderr)".lowercased()
+        return output.contains("user canceled")
+            || output.contains("user cancelled")
+            || output.contains("(-128)")
+    }
 
     var errorDescription: String? {
         switch self {

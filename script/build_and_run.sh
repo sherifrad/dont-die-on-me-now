@@ -64,6 +64,7 @@ PLIST
 
 plutil -lint "$INFO_PLIST" >/dev/null
 codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null
+codesign --verify --deep --strict "$APP_BUNDLE" >/dev/null
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
@@ -100,6 +101,9 @@ case "$MODE" in
     open_app
     sleep 2
     pgrep -x "$APP_NAME" >/dev/null
+    test -x "$APP_BINARY"
+    plutil -lint "$INFO_PLIST" >/dev/null
+    codesign --verify --deep --strict "$APP_BUNDLE" >/dev/null
     ;;
   *)
     echo "usage: $0 [run|--build-only|--debug|--logs|--telemetry|--verify]" >&2

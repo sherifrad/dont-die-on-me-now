@@ -10,23 +10,38 @@ final class PowerSettingsStore: ObservableObject {
 
     private let client: PowerSettingsClient
     private let defaults: UserDefaults
+    private let bootDateProvider: () -> Date
     private var sessionToken: String?
+    private var sessionStartedAt: Date?
 
     private enum DefaultsKey {
         static let selectedDuration = "selectedDuration"
         static let activeUntil = "activeUntil"
         static let sessionToken = "sessionToken"
+        static let sessionStartedAt = "sessionStartedAt"
     }
 
-    init(client: PowerSettingsClient, defaults: UserDefaults = .standard) {
+    init(
+        client: PowerSettingsClient,
+        defaults: UserDefaults = .standard,
+        bootDateProvider: @escaping () -> Date = {
+            Date(timeIntervalSinceNow: -ProcessInfo.processInfo.systemUptime)
+        }
+    ) {
         self.client = client
         self.defaults = defaults
+        self.bootDateProvider = bootDateProvider
         selectedDuration = AwakeDuration(storedValue: defaults.string(forKey: DefaultsKey.selectedDuration))
         sessionToken = defaults.string(forKey: DefaultsKey.sessionToken)
 
         let storedActiveUntil = defaults.double(forKey: DefaultsKey.activeUntil)
         if storedActiveUntil > 0 {
             activeUntil = Date(timeIntervalSince1970: storedActiveUntil)
+        }
+
+        let storedSessionStartedAt = defaults.double(forKey: DefaultsKey.sessionStartedAt)
+        if storedSessionStartedAt > 0 {
+            sessionStartedAt = Date(timeIntervalSince1970: storedSessionStartedAt)
         }
     }
 
@@ -37,8 +52,11 @@ final class PowerSettingsStore: ObservableObject {
 
         switch snapshot.sleepSetting {
         case .disabled:
+            if timedRestoreWasLost {
+                return "Timer Lost"
+            }
             if let remaining = remainingTime, remaining > 0 {
-                return formatRemaining(remaining)
+                return Self.formatRemaining(remaining)
             }
             return activeUntil == nil ? "Awake" : "Expired"
         case .normal:
@@ -55,6 +73,9 @@ final class PowerSettingsStore: ObservableObject {
 
         switch snapshot.sleepSetting {
         case .disabled:
+            if timedRestoreWasLost {
+                return "exclamationmark.triangle.fill"
+            }
             if activeUntil == nil {
                 return "infinity.circle.fill"
             }
@@ -72,6 +93,9 @@ final class PowerSettingsStore: ObservableObject {
     var statusTitle: String {
         switch snapshot.sleepSetting {
         case .disabled:
+            if timedRestoreWasLost {
+                return "Timer Needs Restart"
+            }
             if activeUntil == nil {
                 return "Awake Indefinitely"
             }
@@ -89,11 +113,14 @@ final class PowerSettingsStore: ObservableObject {
     var statusDetail: String {
         switch snapshot.sleepSetting {
         case .disabled:
+            if timedRestoreWasLost {
+                return "The Mac restarted, so automatic restore is no longer scheduled."
+            }
             if activeUntil == nil {
                 return "Codex and Claude Code can keep running until you restore sleep."
             }
             if let remaining = remainingTime, remaining > 0 {
-                return "Restores normal sleep in \(formatRemaining(remaining))."
+                return "Restores normal sleep in \(Self.formatRemaining(remaining))."
             }
             return "The timer ended, but this Mac still reports sleep disabled."
         case .normal:
@@ -136,6 +163,17 @@ final class PowerSettingsStore: ObservableObject {
         return activeUntil.timeIntervalSinceNow
     }
 
+    var timedRestoreWasLost: Bool {
+        guard snapshot.sleepSetting.isDisabled,
+              let activeUntil,
+              activeUntil > Date(),
+              let sessionStartedAt else {
+            return false
+        }
+
+        return bootDateProvider() > sessionStartedAt
+    }
+
     var canRestartTimer: Bool {
         snapshot.sleepSetting.isDisabled
     }
@@ -143,11 +181,14 @@ final class PowerSettingsStore: ObservableObject {
     var sessionSummary: String {
         switch snapshot.sleepSetting {
         case .disabled:
+            if timedRestoreWasLost {
+                return "Restart the timer or enable sleep."
+            }
             if activeUntil == nil {
                 return "No automatic restore is scheduled."
             }
             if let remaining = remainingTime, remaining > 0 {
-                return "Automatic restore in \(formatRemaining(remaining))."
+                return "Automatic restore in \(Self.formatRemaining(remaining))."
             }
             return "Automatic restore should have already run."
         case .normal:
@@ -175,20 +216,28 @@ final class PowerSettingsStore: ObservableObject {
         let duration = selectedDuration
         let token = UUID().uuidString
         let timedRestore = duration.seconds.map { TimedRestore(seconds: $0, token: token) }
-        let targetActiveUntil = duration.seconds.map { Date().addingTimeInterval(TimeInterval($0)) }
-        let message = targetActiveUntil.map {
-            "Sleep disabled for \(formatRemaining($0.timeIntervalSinceNow))."
-        } ?? "Sleep disabled until you restore it."
 
-        runWork(successMessage: message) { [client] in
+        runWork(successMessage: nil) { [client] in
             try client.setSleepDisabled(true, timedRestore, token)
+            let completedAt = Date()
+            let targetActiveUntil = duration.seconds.map {
+                completedAt.addingTimeInterval(TimeInterval($0))
+            }
             let snapshot = try client.readSnapshot()
             guard snapshot.sleepSetting.isDisabled else {
                 throw PowerSettingsStoreError.verificationFailed(expectedDisabled: true)
             }
+            let message = targetActiveUntil.map {
+                "Sleep disabled for \(Self.formatRemaining($0.timeIntervalSinceNow))."
+            } ?? "Sleep disabled until you restore it."
             return StoreUpdate(
                 snapshot: snapshot,
-                sessionMutation: .set(activeUntil: targetActiveUntil, token: token)
+                sessionMutation: .set(
+                    activeUntil: targetActiveUntil,
+                    token: token,
+                    startedAt: targetActiveUntil == nil ? nil : completedAt
+                ),
+                statusMessage: message
             )
         }
     }
@@ -200,7 +249,11 @@ final class PowerSettingsStore: ObservableObject {
             guard !snapshot.sleepSetting.isDisabled else {
                 throw PowerSettingsStoreError.verificationFailed(expectedDisabled: false)
             }
-            return StoreUpdate(snapshot: snapshot, sessionMutation: .clear)
+            return StoreUpdate(
+                snapshot: snapshot,
+                sessionMutation: .clear,
+                statusMessage: "Normal sleep is enabled."
+            )
         }
     }
 
@@ -246,7 +299,7 @@ final class PowerSettingsStore: ObservableObject {
                 case let .success(update):
                     self.snapshot = update.snapshot
                     self.apply(update.sessionMutation, snapshot: update.snapshot)
-                    self.statusMessage = successMessage
+                    self.statusMessage = update.statusMessage ?? successMessage
                 case let .failure(error):
                     if let clientError = error as? PowerSettingsClientError,
                        clientError == .userCancelled {
@@ -268,15 +321,21 @@ final class PowerSettingsStore: ObservableObject {
             if !snapshot.sleepSetting.isDisabled {
                 clearSession()
             }
-        case let .set(activeUntil, token):
+        case let .set(activeUntil, token, startedAt):
             self.activeUntil = activeUntil
             sessionToken = token
+            sessionStartedAt = startedAt
             if let activeUntil {
                 defaults.set(activeUntil.timeIntervalSince1970, forKey: DefaultsKey.activeUntil)
             } else {
                 defaults.removeObject(forKey: DefaultsKey.activeUntil)
             }
             defaults.set(token, forKey: DefaultsKey.sessionToken)
+            if let startedAt {
+                defaults.set(startedAt.timeIntervalSince1970, forKey: DefaultsKey.sessionStartedAt)
+            } else {
+                defaults.removeObject(forKey: DefaultsKey.sessionStartedAt)
+            }
         case .clear:
             clearSession()
         }
@@ -285,11 +344,13 @@ final class PowerSettingsStore: ObservableObject {
     private func clearSession() {
         activeUntil = nil
         sessionToken = nil
+        sessionStartedAt = nil
         defaults.removeObject(forKey: DefaultsKey.activeUntil)
         defaults.removeObject(forKey: DefaultsKey.sessionToken)
+        defaults.removeObject(forKey: DefaultsKey.sessionStartedAt)
     }
 
-    private func formatRemaining(_ remaining: TimeInterval) -> String {
+    private static func formatRemaining(_ remaining: TimeInterval) -> String {
         let seconds = max(0, Int(remaining.rounded(.up)))
         let hours = seconds / 3600
         let minutes = (seconds % 3600) / 60
@@ -323,10 +384,11 @@ enum PowerSettingsStoreError: LocalizedError, Equatable {
 private struct StoreUpdate {
     let snapshot: PowerSettingsSnapshot
     let sessionMutation: SessionMutation
+    var statusMessage: String? = nil
 }
 
 private enum SessionMutation {
     case preserve
-    case set(activeUntil: Date?, token: String)
+    case set(activeUntil: Date?, token: String, startedAt: Date?)
     case clear
 }

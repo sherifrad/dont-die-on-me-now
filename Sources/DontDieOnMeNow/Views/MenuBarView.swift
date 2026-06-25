@@ -64,7 +64,7 @@ struct MenuBarView: View {
                 } label: {
                     HStack {
                         Image(systemName: store.selectedDuration == .indefinite ? "infinity.circle" : "timer")
-                        Text("Restart Timer")
+                        Text(store.selectedDuration == .indefinite ? "Restart Session" : "Restart Timer")
                     }
                 }
                 .disabled(store.isWorking)

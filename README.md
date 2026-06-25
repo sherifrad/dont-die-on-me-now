@@ -25,7 +25,7 @@ Timed sessions schedule a delayed restore command at the same time sleep is disa
 
 Restoring sleep is always permanent until you start a new awake session. The timer only applies while sleep is disabled.
 
-When you click the menu bar action, macOS shows the standard administrator prompt. The app does not store your password, install a daemon, start a login item, or use the network. Timed sessions create a one-shot delayed restore process so sleep can be re-enabled later without a second prompt.
+When you click the menu bar action, macOS shows the standard administrator prompt. The app does not store your password, install a daemon, start a login item, or use the network. Timed sessions create a one-shot delayed restore process so sleep can be re-enabled later without a second prompt. If the Mac restarts during a timed session, that one-shot process is gone; when relaunched, the app warns that the timer needs to be restarted or sleep should be enabled.
 
 ## Why This Exists
 
@@ -34,6 +34,15 @@ Local agents are only useful while the machine stays awake. Closing a MacBook li
 ## Safety
 
 Disabling sleep can keep the machine warm and active. Do not use this while the MacBook is inside a bag, sleeve, or anywhere heat cannot escape. Use it on a hard, ventilated surface, ideally on power.
+
+## Compatibility
+
+The app targets macOS 13 or newer because it uses SwiftUI's menu bar APIs. The sleep switch itself relies on Apple's `pmset` command; Apple documents `sudo pmset -a disablesleep 1` as disabling all sleep functions, and separately documents `pmset` as the Terminal utility for Mac sleep, wake, restart, and shutdown scheduling:
+
+- https://support.apple.com/101114
+- https://support.apple.com/guide/mac-help/mchl40376151/mac
+
+Because `disablesleep` is not documented in every local `pmset` man page, the app reads `pmset -g` after every change and reports an error if the setting did not actually change.
 
 ## Build And Run
 
@@ -62,7 +71,7 @@ The menu bar icon changes by mode:
 - moon: normal sleep
 - timer: timed awake session
 - infinity: awake until manually restored
-- warning: timer expired but sleep still appears disabled
+- warning: timer expired, or the timed restore was lost after a restart
 - question mark: state unknown
 
 Install the staged app for local testing:
@@ -114,6 +123,8 @@ This is intentionally small:
 - no persistent background service
 
 The tradeoff is that each toggle uses the normal macOS administrator prompt.
+
+Because this app intentionally avoids login items, launch daemons, and privileged helpers, it cannot automatically fix sleep settings before it is running. If the Mac reboots during a timed session, launch the app and choose Restart Timer or Enable Sleep.
 
 `disablesleep` is visible in `pmset -g` on supported systems, but it is not documented in every local `pmset` man page. Apple documents `sudo pmset -a disablesleep 1` in an OS X Server support article, and this app verifies the setting after each change. If your Mac does not accept the setting, the app should show the underlying `pmset` or administrator-prompt error and leave the current state unchanged.
 

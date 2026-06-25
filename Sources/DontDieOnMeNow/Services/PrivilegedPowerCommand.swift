@@ -1,8 +1,8 @@
 import Foundation
 
 enum PrivilegedPowerCommand {
-    private static let sessionDirectory = "/var/tmp/dont-die-on-me-now"
-    private static let sessionFile = "/var/tmp/dont-die-on-me-now/session"
+    private static let sessionDirectory = "/Library/Application Support/DontDieOnMeNow"
+    private static let sessionFile = "/Library/Application Support/DontDieOnMeNow/session"
 
     static func appleScript(
         disabled: Bool,
@@ -26,8 +26,10 @@ enum PrivilegedPowerCommand {
         let setup = [
             "set -e",
             "/bin/mkdir -p \(sessionDirectory.shellSingleQuoted)",
+            "/usr/sbin/chown root:wheel \(sessionDirectory.shellSingleQuoted)",
             "/bin/chmod 700 \(sessionDirectory.shellSingleQuoted)",
             "/bin/echo \(token) > \(sessionFile.shellSingleQuoted)",
+            "/bin/chmod 600 \(sessionFile.shellSingleQuoted)",
         ]
 
         if disabled {
