@@ -5,7 +5,7 @@ MODE="${1:-run}"
 APP_NAME="DontDieOnMeNow"
 DISPLAY_NAME="Don't Die On Me Now"
 BUNDLE_ID="com.josh.DontDieOnMeNow"
-MIN_SYSTEM_VERSION="14.0"
+MIN_SYSTEM_VERSION="13.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"

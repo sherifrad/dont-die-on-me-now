@@ -25,6 +25,9 @@ extension PowerSettingsClient {
                 let script = PrivilegedPowerCommand.appleScript(disabled: disabled)
                 let result = try runner.run("/usr/bin/osascript", arguments: ["-e", script])
                 guard result.terminationStatus == 0 else {
+                    if result.stderr.localizedCaseInsensitiveContains("User canceled") {
+                        throw PowerSettingsClientError.userCancelled
+                    }
                     throw PowerSettingsClientError.commandFailed(
                         command: "osascript",
                         status: result.terminationStatus,
@@ -38,6 +41,7 @@ extension PowerSettingsClient {
 
 enum PowerSettingsClientError: LocalizedError, Equatable {
     case commandFailed(command: String, status: Int32, stderr: String)
+    case userCancelled
 
     var errorDescription: String? {
         switch self {
@@ -47,7 +51,8 @@ enum PowerSettingsClientError: LocalizedError, Equatable {
                 return "\(command) failed with status \(status)."
             }
             return "\(command) failed with status \(status): \(detail)"
+        case .userCancelled:
+            return "The administrator prompt was canceled."
         }
     }
 }
-

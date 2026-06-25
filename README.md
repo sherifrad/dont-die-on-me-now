@@ -27,7 +27,7 @@ Disabling sleep can keep the machine warm and active. Do not use this while the 
 
 Requirements:
 
-- macOS 14 or newer
+- macOS 13 or newer
 - Xcode Command Line Tools
 - Swift 6-capable toolchain
 
@@ -44,6 +44,12 @@ Build and launch the app bundle:
 ```
 
 The app appears in the macOS menu bar, not the Dock. Click the menu bar item to enable or disable sleep.
+
+Install the staged app for local testing:
+
+```sh
+cp -R "dist/Don't Die On Me Now.app" /Applications/
+```
 
 Verify the staged app launches:
 
@@ -87,6 +93,8 @@ This is intentionally small:
 - no password storage
 
 The tradeoff is that each toggle uses the normal macOS administrator prompt.
+
+`disablesleep` is visible in `pmset -g` on supported systems, but it is not documented in every local `pmset` man page. If your Mac does not accept the setting, the app should show the underlying `pmset` or administrator-prompt error and leave the current state unchanged.
 
 ## License
 

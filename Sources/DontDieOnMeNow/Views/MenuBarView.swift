@@ -23,7 +23,7 @@ struct MenuBarView: View {
             }
 
             Button {
-                store.toggleSleep()
+                store.performPrimaryAction()
             } label: {
                 HStack {
                     Image(systemName: store.actionSystemImage)
@@ -84,4 +84,3 @@ struct MenuBarView: View {
         }
     }
 }
-

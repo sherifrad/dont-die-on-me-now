@@ -57,11 +57,25 @@ final class PowerSettingsStore: ObservableObject {
     }
 
     var actionTitle: String {
-        snapshot.sleepSetting.isDisabled ? "Enable Sleep" : "Disable Sleep"
+        switch snapshot.sleepSetting {
+        case .disabled:
+            return "Enable Sleep"
+        case .normal:
+            return "Disable Sleep"
+        case .unknown:
+            return "Refresh State"
+        }
     }
 
     var actionSystemImage: String {
-        snapshot.sleepSetting.isDisabled ? "moon" : "bolt.fill"
+        switch snapshot.sleepSetting {
+        case .disabled:
+            return "moon"
+        case .normal:
+            return "bolt.fill"
+        case .unknown:
+            return "arrow.clockwise"
+        }
     }
 
     var shouldDisableSleepForNextAction: Bool {
@@ -80,7 +94,19 @@ final class PowerSettingsStore: ObservableObject {
 
         runWork(successMessage: message) { [client] in
             try client.setSleepDisabled(shouldDisable)
-            return try client.readSnapshot()
+            let snapshot = try client.readSnapshot()
+            guard snapshot.sleepSetting.isDisabled == shouldDisable else {
+                throw PowerSettingsStoreError.verificationFailed(expectedDisabled: shouldDisable)
+            }
+            return snapshot
+        }
+    }
+
+    func performPrimaryAction() {
+        if case .unknown = snapshot.sleepSetting {
+            refresh()
+        } else {
+            toggleSleep()
         }
     }
 
@@ -106,6 +132,11 @@ final class PowerSettingsStore: ObservableObject {
                     self.snapshot = snapshot
                     self.statusMessage = successMessage
                 case let .failure(error):
+                    if let clientError = error as? PowerSettingsClientError,
+                       clientError == .userCancelled {
+                        self.statusMessage = "Canceled."
+                        return
+                    }
                     self.alert = UtilityAlert(
                         title: "Could Not Update Sleep",
                         message: error.localizedDescription
@@ -122,3 +153,14 @@ struct UtilityAlert: Identifiable, Equatable {
     let message: String
 }
 
+enum PowerSettingsStoreError: LocalizedError, Equatable {
+    case verificationFailed(expectedDisabled: Bool)
+
+    var errorDescription: String? {
+        switch self {
+        case let .verificationFailed(expectedDisabled):
+            let expected = expectedDisabled ? "disabled" : "enabled"
+            return "macOS accepted the command, but sleep was not \(expected)."
+        }
+    }
+}

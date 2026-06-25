@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "dont-die-on-me-now",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v13),
     ],
     products: [
         .executable(
@@ -22,4 +22,3 @@ let package = Package(
         ),
     ]
 )
-
