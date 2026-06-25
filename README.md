@@ -23,6 +23,8 @@ By default, an awake session lasts 6 hours. You can change the duration from the
 
 Timed sessions schedule a delayed restore command at the same time sleep is disabled, so normal sleep can be restored even if the menu bar app is not frontmost.
 
+Restoring sleep is always permanent until you start a new awake session. The timer only applies while sleep is disabled.
+
 When you click the menu bar action, macOS shows the standard administrator prompt. The app does not store your password, install a daemon, start a login item, or use the network. Timed sessions create a one-shot delayed restore process so sleep can be re-enabled later without a second prompt.
 
 ## Why This Exists

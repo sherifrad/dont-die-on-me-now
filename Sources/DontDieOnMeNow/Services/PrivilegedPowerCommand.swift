@@ -35,15 +35,14 @@ enum PrivilegedPowerCommand {
             commands.append("/usr/bin/pmset -a disablesleep 1")
 
             if let timedRestore {
-                let restore = [
-                    "(",
+                let restoreScript = [
                     "/bin/sleep \(timedRestore.seconds)",
                     "if [ \"$(/bin/cat \(sessionFile.shellSingleQuoted) 2>/dev/null)\" = \(timedRestore.token.shellSingleQuoted) ]; then",
                     "/usr/bin/pmset -a disablesleep 0",
                     "/bin/rm -f \(sessionFile.shellSingleQuoted)",
                     "fi",
-                    ") >/dev/null 2>&1 &",
                 ].joined(separator: "; ")
+                let restore = "/usr/bin/nohup /bin/sh -c \(restoreScript.shellSingleQuoted) >/dev/null 2>&1 &"
                 commands.append(restore)
             }
 
