@@ -17,8 +17,6 @@ APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 ICON_PATH="$DIST_DIR/DontDieOnMeNow.icns"
 
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
-
 cd "$ROOT_DIR"
 swift build
 BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
@@ -71,25 +69,34 @@ open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
 }
 
+stop_running_app() {
+  pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+}
+
 case "$MODE" in
   --build-only|build-only)
     echo "$APP_BUNDLE"
     ;;
   run)
+    stop_running_app
     open_app
     ;;
   --debug|debug)
+    stop_running_app
     lldb -- "$APP_BINARY"
     ;;
   --logs|logs)
+    stop_running_app
     open_app
     /usr/bin/log stream --info --style compact --predicate "process == \"$APP_NAME\""
     ;;
   --telemetry|telemetry)
+    stop_running_app
     open_app
     /usr/bin/log stream --info --style compact --predicate "subsystem == \"$BUNDLE_ID\""
     ;;
   --verify|verify)
+    stop_running_app
     open_app
     sleep 2
     pgrep -x "$APP_NAME" >/dev/null
