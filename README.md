@@ -44,7 +44,47 @@ The app targets macOS 13 or newer because it uses SwiftUI's menu bar APIs. The s
 
 Because `disablesleep` is not documented in every local `pmset` man page, the app reads `pmset -g` after every change and reports an error if the setting did not actually change.
 
-## Build And Run
+## Install And Run
+
+For normal use, build or download the app, then put it in `/Applications`.
+
+From a local clone:
+
+```sh
+./script/build_and_run.sh --build-only
+cp -R "dist/Don't Die On Me Now.app" /Applications/
+open "/Applications/Don't Die On Me Now.app"
+```
+
+From a release zip:
+
+1. Unzip `DontDieOnMeNow.zip`.
+2. Move `Don't Die On Me Now.app` to `/Applications`.
+3. Open it from Finder or Terminal.
+
+Because this is an unsigned dev utility, macOS may block the first launch. If that happens, Control-click the app in Finder, choose Open, then confirm. After the first accepted launch, it should open normally.
+
+The app appears in the macOS menu bar, not the Dock. Click the menu bar item to enable or disable sleep.
+
+## Run At Login
+
+Yes, it can be set up to run when you log in.
+
+Recommended manual setup:
+
+1. Move `Don't Die On Me Now.app` to `/Applications`.
+2. Open System Settings.
+3. Go to General, then Login Items & Extensions.
+4. Under Open at Login, click the add button.
+5. Select `/Applications/Don't Die On Me Now.app`.
+
+Apple documents this flow here: https://support.apple.com/guide/mac-help/open-items-automatically-when-you-log-in-mh15189/mac
+
+This only launches the menu bar app at login. It does not automatically disable sleep. You still choose when to start an awake session, and macOS still shows the administrator prompt when the app changes `pmset`.
+
+If you move or delete the app later, remove and re-add the Login Item so macOS points at the new app location.
+
+## Build And Run From Source
 
 Requirements:
 
@@ -58,13 +98,11 @@ Run the tests:
 swift test
 ```
 
-Build and launch the app bundle:
+Build and launch the app bundle from the repository:
 
 ```sh
 ./script/build_and_run.sh
 ```
-
-The app appears in the macOS menu bar, not the Dock. Click the menu bar item to enable or disable sleep.
 
 The menu bar icon changes by mode:
 
@@ -73,12 +111,6 @@ The menu bar icon changes by mode:
 - infinity: awake until manually restored
 - warning: timer expired, or the timed restore was lost after a restart
 - question mark: state unknown
-
-Install the staged app for local testing:
-
-```sh
-cp -R "dist/Don't Die On Me Now.app" /Applications/
-```
 
 Verify the staged app launches:
 
