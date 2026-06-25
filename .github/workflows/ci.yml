@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: swift test
+      - name: Build app bundle
+        run: ./script/build_and_run.sh --verify
+      - name: Stop app
+        if: always()
+        run: pkill -x DontDieOnMeNow || true
+
