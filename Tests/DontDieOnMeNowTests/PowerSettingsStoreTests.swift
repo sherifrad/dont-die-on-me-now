@@ -17,6 +17,7 @@ final class PowerSettingsStoreTests: XCTestCase {
         let store = PowerSettingsStore(client: client, defaults: defaults)
 
         XCTAssertEqual(store.actionTitle, "Check Again")
+        XCTAssertNil(store.menuBarTitle)
         XCTAssertEqual(store.menuBarSystemImage, "moon.circle")
         store.performPrimaryAction()
 
@@ -116,7 +117,7 @@ final class PowerSettingsStoreTests: XCTestCase {
                 store.activeSessionValue?.range(of: #"^(6h 0m 0s|5h 59m 59s)$"#, options: .regularExpression) != nil,
                 store.activeSessionValue ?? ""
             )
-            XCTAssertEqual(store.menuBarTitle, store.activeSessionValue)
+            XCTAssertEqual(store.menuBarTitle, "6h")
             XCTAssertEqual(store.activeSessionCaption, "left")
             expectation.fulfill()
         }
@@ -149,6 +150,7 @@ final class PowerSettingsStoreTests: XCTestCase {
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
             XCTAssertNil(capturedRestore)
             XCTAssertNil(store.activeUntil)
+            XCTAssertNil(store.menuBarTitle)
             XCTAssertEqual(defaults.string(forKey: "selectedDuration"), AwakeDuration.indefinite.rawValue)
             expectation.fulfill()
         }
@@ -203,7 +205,7 @@ final class PowerSettingsStoreTests: XCTestCase {
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
             XCTAssertEqual(store.statusTitle, "Needs Attention")
             XCTAssertEqual(store.statusDetail, "Timer ended, but sleep is still disabled.")
-            XCTAssertEqual(store.menuBarTitle, "Still Awake")
+            XCTAssertNil(store.menuBarTitle)
             XCTAssertEqual(store.menuBarSystemImage, "exclamationmark.triangle.fill")
             XCTAssertEqual(store.activeSessionValue, "Still Awake")
             XCTAssertEqual(store.activeSessionCaption, "Timer ended. Stop to restore normal sleep.")
@@ -238,7 +240,7 @@ final class PowerSettingsStoreTests: XCTestCase {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
             XCTAssertTrue(store.timedRestoreWasLost)
-            XCTAssertEqual(store.menuBarTitle, "Timer Lost")
+            XCTAssertNil(store.menuBarTitle)
             XCTAssertEqual(store.menuBarSystemImage, "exclamationmark.triangle.fill")
             XCTAssertEqual(store.statusTitle, "Needs Attention")
             XCTAssertEqual(

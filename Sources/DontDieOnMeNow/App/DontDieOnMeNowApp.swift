@@ -20,7 +20,9 @@ struct DontDieOnMeNowApp: App {
                 Image(systemName: store.menuBarSystemImage)
                     .font(.system(size: 16, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
-                Text(store.menuBarTitle)
+                if let menuBarTitle = store.menuBarTitle {
+                    Text(menuBarTitle)
+                }
             }
         }
         .menuBarExtraStyle(.window)

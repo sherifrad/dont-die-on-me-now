@@ -46,25 +46,16 @@ final class PowerSettingsStore: ObservableObject {
         }
     }
 
-    var menuBarTitle: String {
-        if isWorking {
-            return "Checking"
+    var menuBarTitle: String? {
+        guard !isWorking,
+              snapshot.sleepSetting.isDisabled,
+              !timedRestoreWasLost,
+              let remaining = remainingTime,
+              remaining > 0 else {
+            return nil
         }
 
-        switch snapshot.sleepSetting {
-        case .disabled:
-            if timedRestoreWasLost {
-                return "Timer Lost"
-            }
-            if let remaining = remainingTime, remaining > 0 {
-                return Self.formatRemaining(remaining)
-            }
-            return activeUntil == nil ? "Awake" : "Still Awake"
-        case .normal:
-            return "Ready"
-        case .unknown:
-            return "Checking"
-        }
+        return Self.formatMenuBarRemaining(remaining)
     }
 
     var menuBarSystemImage: String {
@@ -374,6 +365,11 @@ final class PowerSettingsStore: ObservableObject {
         }
 
         return "\(remainingSeconds)s"
+    }
+
+    private static func formatMenuBarRemaining(_ remaining: TimeInterval) -> String {
+        let hours = max(1, Int(ceil(remaining / 3600)))
+        return "\(hours)h"
     }
 }
 
