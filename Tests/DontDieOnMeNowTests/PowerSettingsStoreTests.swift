@@ -111,7 +111,12 @@ final class PowerSettingsStoreTests: XCTestCase {
             XCTAssertEqual(store.snapshot.sleepSetting, .disabled)
             XCTAssertEqual(store.statusTitle, "Awake")
             XCTAssertEqual(store.actionTitle, "Stop")
-            XCTAssertTrue(["6h", "5h 59m"].contains(store.activeSessionValue ?? ""))
+            XCTAssertNil(store.statusMessage)
+            XCTAssertTrue(
+                store.activeSessionValue?.range(of: #"^(6h 0m 0s|5h 59m 59s)$"#, options: .regularExpression) != nil,
+                store.activeSessionValue ?? ""
+            )
+            XCTAssertEqual(store.menuBarTitle, store.activeSessionValue)
             XCTAssertEqual(store.activeSessionCaption, "left")
             expectation.fulfill()
         }

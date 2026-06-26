@@ -240,17 +240,13 @@ final class PowerSettingsStore: ObservableObject {
             guard snapshot.sleepSetting.isDisabled else {
                 throw PowerSettingsStoreError.verificationFailed(expectedDisabled: true)
             }
-            let message = targetActiveUntil.map {
-                "Keeping awake for \(Self.formatRemaining($0.timeIntervalSinceNow))."
-            } ?? "Keeping awake until stopped."
             return StoreUpdate(
                 snapshot: snapshot,
                 sessionMutation: .set(
                     activeUntil: targetActiveUntil,
                     token: token,
                     startedAt: targetActiveUntil == nil ? nil : completedAt
-                ),
-                statusMessage: message
+                )
             )
         }
     }
@@ -367,12 +363,17 @@ final class PowerSettingsStore: ObservableObject {
         let seconds = max(0, Int(remaining.rounded(.up)))
         let hours = seconds / 3600
         let minutes = (seconds % 3600) / 60
+        let remainingSeconds = seconds % 60
 
         if hours > 0 {
-            return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+            return "\(hours)h \(minutes)m \(remainingSeconds)s"
         }
 
-        return "\(max(1, minutes))m"
+        if minutes > 0 {
+            return "\(minutes)m \(remainingSeconds)s"
+        }
+
+        return "\(remainingSeconds)s"
     }
 }
 

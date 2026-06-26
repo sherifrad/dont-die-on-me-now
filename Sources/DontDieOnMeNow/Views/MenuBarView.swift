@@ -42,7 +42,7 @@ struct MenuBarView: View {
         .onAppear {
             store.refresh()
         }
-        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             store.tick()
         }
         .alert(item: $store.alert) { alert in
