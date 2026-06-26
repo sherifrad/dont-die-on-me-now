@@ -2,10 +2,10 @@
 set -euo pipefail
 
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
-  exec sudo /bin/bash "$0" "$@"
+  exec /usr/bin/sudo /bin/bash "$0" "$@"
 fi
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(/usr/bin/dirname "${BASH_SOURCE[0]}")/.." && /bin/pwd)"
 STATE_DIR="/Library/Application Support/DontDieOnMeNow"
 HELPER="$STATE_DIR/failsafe_check.sh"
 LABEL="com.josh.DontDieOnMeNow.failsafe"

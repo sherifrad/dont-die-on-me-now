@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
-  exec sudo /bin/bash "$0" "$@"
+  exec /usr/bin/sudo /bin/bash "$0" "$@"
 fi
 
 LABEL="com.josh.DontDieOnMeNow.failsafe"

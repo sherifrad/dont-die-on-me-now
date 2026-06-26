@@ -21,7 +21,7 @@ if [ ! -d "$APP_PATH" ]; then
   exit 1
 fi
 
-mkdir -p "$HOME/Library/LaunchAgents"
+/bin/mkdir -p "$HOME/Library/LaunchAgents"
 APP_PATH_XML="$(xml_escape "$APP_PATH")"
 
 cat >"$PLIST" <<PLIST
@@ -34,7 +34,6 @@ cat >"$PLIST" <<PLIST
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/open</string>
-    <string>-n</string>
     <string>$APP_PATH_XML</string>
   </array>
   <key>RunAtLoad</key>
@@ -43,10 +42,10 @@ cat >"$PLIST" <<PLIST
 </plist>
 PLIST
 
-plutil -lint "$PLIST" >/dev/null
-launchctl bootout "gui/$UID" "$PLIST" >/dev/null 2>&1 || true
-launchctl bootstrap "gui/$UID" "$PLIST"
-launchctl kickstart -k "gui/$UID/$LABEL" >/dev/null 2>&1 || true
+/usr/bin/plutil -lint "$PLIST" >/dev/null
+/bin/launchctl bootout "gui/$UID" "$PLIST" >/dev/null 2>&1 || true
+/bin/launchctl bootstrap "gui/$UID" "$PLIST"
+/bin/launchctl kickstart -k "gui/$UID/$LABEL" >/dev/null 2>&1 || true
 
 echo "Installed login launcher: $PLIST"
 echo "It opens: $APP_PATH"
