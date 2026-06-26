@@ -48,9 +48,51 @@ final class PowerSettingsClientTests: XCTestCase {
         XCTAssertTrue(command.contains("/usr/bin/nohup /bin/sh -c"))
         XCTAssertTrue(command.contains("token-1"))
         XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow"))
+        XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow/deadline"))
         XCTAssertTrue(command.contains("/usr/sbin/chown root:wheel"))
         XCTAssertTrue(command.contains("/bin/chmod 600"))
+        XCTAssertTrue(command.contains("/bin/mv -f"))
+        XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow/deadline.tmp"))
         XCTAssertFalse(command.contains("/var/tmp"))
+    }
+
+    func testTimedRestoreIsScheduledBeforeSleepIsDisabled() {
+        let command = PrivilegedPowerCommand.shellCommand(
+            disabled: true,
+            timedRestore: TimedRestore(seconds: 21_600, token: "token-1")
+        )
+
+        let deadlineRange = command.range(of: "/bin/echo $(( $(/bin/date +%s) + 21600 ))")
+        let restoreRange = command.range(of: "/usr/bin/nohup /bin/sh -c")
+        let disableRange = command.range(of: "/usr/bin/pmset -a disablesleep 1")
+
+        XCTAssertNotNil(deadlineRange)
+        XCTAssertNotNil(restoreRange)
+        XCTAssertNotNil(disableRange)
+        XCTAssertLessThan(deadlineRange!.lowerBound, disableRange!.lowerBound)
+        XCTAssertLessThan(restoreRange!.lowerBound, disableRange!.lowerBound)
+    }
+
+    func testTimedRestoreWritesSessionTokenBeforeRestoreIsScheduled() {
+        let command = PrivilegedPowerCommand.shellCommand(
+            disabled: true,
+            timedRestore: TimedRestore(seconds: 21_600, token: "token-1")
+        )
+
+        let sessionRange = command.range(of: "/bin/echo 'token-1'")
+        let restoreRange = command.range(of: "/usr/bin/nohup /bin/sh -c")
+
+        XCTAssertNotNil(sessionRange)
+        XCTAssertNotNil(restoreRange)
+        XCTAssertLessThan(sessionRange!.lowerBound, restoreRange!.lowerBound)
+    }
+
+    func testStopClearsFailsafeState() {
+        let command = PrivilegedPowerCommand.shellCommand(disabled: false)
+
+        XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow/session"))
+        XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow/deadline"))
+        XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow/deadline.tmp"))
     }
 
     func testTimedRestoreShellCommandIsValidShSyntax() throws {
