@@ -2,6 +2,7 @@
 set -euo pipefail
 
 LOGIN_LABEL="com.josh.DontDieOnMeNow.login"
+RESTORE_LABEL="com.josh.DontDieOnMeNow.restore"
 FAILSAFE_LABEL="com.josh.DontDieOnMeNow.failsafe"
 DEADLINE_FILE="/Library/Application Support/DontDieOnMeNow/deadline"
 
@@ -19,6 +20,14 @@ fi
 echo
 echo "login launcher:"
 if /bin/launchctl print "gui/$UID/$LOGIN_LABEL" >/dev/null 2>&1; then
+  echo "  loaded"
+else
+  echo "  not loaded"
+fi
+
+echo
+echo "timed restore job:"
+if /bin/launchctl print "system/$RESTORE_LABEL" >/dev/null 2>&1; then
   echo "  loaded"
 else
   echo "  not loaded"

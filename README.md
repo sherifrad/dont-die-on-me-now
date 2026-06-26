@@ -21,11 +21,11 @@ By default, an awake session lasts 6 hours. You can change the duration from the
 - 12 hours
 - Until I restore it
 
-Timed sessions schedule a delayed restore command at the same time sleep is disabled, so normal sleep can be restored even if the menu bar app is not frontmost.
+Timed sessions install a temporary root launchd restore job at the same time sleep is disabled, so normal sleep can be restored even if the menu bar app is not frontmost.
 
 Restoring sleep is always permanent until you start a new awake session. The timer only applies while sleep is disabled.
 
-When you click the menu bar action, macOS shows the standard administrator prompt. The app does not store your password or use the network. Timed sessions create a one-shot delayed restore process so sleep can be re-enabled later without a second prompt. If the optional failsafe daemon is installed, a root launchd job also checks timed-session deadlines and restores normal sleep if the one-shot process is gone after a reboot or process kill.
+When you click the menu bar action, macOS shows the standard administrator prompt. The app does not store your password or use the network. Timed sessions create a temporary root launchd job so sleep can be re-enabled later without a second prompt. The job removes itself after it restores sleep. If the optional failsafe daemon is installed, a separate root launchd job also checks timed-session deadlines and restores normal sleep if the temporary job is missing.
 
 ## Why This Exists
 
@@ -102,8 +102,10 @@ The script installs a user LaunchAgent at `~/Library/LaunchAgents/com.josh.DontD
 
 For timed sessions, the app uses two protections:
 
-1. It schedules the restore process before it disables sleep. If the app crashes after the admin command succeeds, the restore process is already independent of the app.
+1. It bootstraps a temporary launchd restore job before it disables sleep. If the app crashes after the admin command succeeds, launchd owns the restore work.
 2. It atomically writes a root-owned deadline file at `/Library/Application Support/DontDieOnMeNow/deadline`.
+
+The temporary restore job lives at `/Library/LaunchDaemons/com.josh.DontDieOnMeNow.restore.plist` while a timed session is active. It runs `/Library/Application Support/DontDieOnMeNow/restore_once.sh`, sleeps until the saved deadline, runs `pmset -a disablesleep 0`, then removes itself. Clicking Stop removes it too.
 
 For extra protection, install the optional root failsafe daemon:
 
@@ -135,7 +137,7 @@ Manual emergency restore:
 ./script/restore_sleep_now.sh
 ```
 
-There is still no honest "no way, ever" guarantee. macOS, root launchd, `pmset`, power loss, and manual root-level file edits can fail or interfere. The practical guarantee is: for timed sessions, normal app crashes do not strand the Mac in no-sleep mode, and the optional failsafe daemon covers reboot or killed restore-process cases. The "Until I restore it" mode is intentionally manual and can stay awake until you click Stop or run the restore script.
+There is still no honest "no way, ever" guarantee. macOS, root launchd, `pmset`, power loss, and manual root-level file edits can fail or interfere. The practical guarantee is: for timed sessions, normal app crashes do not strand the Mac in no-sleep mode, and the temporary launchd restore job can self-recover after reboot by reading the saved deadline. The optional failsafe daemon is a second line of defense if the temporary restore job is missing. The "Until I restore it" mode is intentionally manual and can stay awake until you click Stop or run the restore script.
 
 ## Build And Run From Source
 
@@ -205,10 +207,11 @@ The default app is intentionally small:
 - no network access
 - no password storage
 - no persistent background service unless you install the optional failsafe daemon
+- timed sessions use a temporary launchd restore job that removes itself
 
-The default app still has no persistent background service. The optional failsafe daemon is a dev-targeted safety net you can install if you want timed sessions to self-recover after reboots. The tradeoff is that each toggle uses the normal macOS administrator prompt.
+The default app still has no persistent background service. Timed sessions create a temporary launchd restore job only for the lifetime of that session. The optional failsafe daemon is a dev-targeted safety net you can install if you want an always-on second check. The tradeoff is that each toggle uses the normal macOS administrator prompt.
 
-If you do not install the failsafe daemon, the app cannot automatically fix sleep settings before it is running. If the Mac reboots during a timed session, launch the app and choose Stop or start a new Keep Awake session.
+If you do not install the failsafe daemon and the temporary restore job is manually removed, the app cannot automatically fix sleep settings before it is running. Launch the app and choose Stop or start a new Keep Awake session.
 
 `disablesleep` is visible in `pmset -g` on supported systems, but it is not documented in every local `pmset` man page. Apple documents `sudo pmset -a disablesleep 1` in an OS X Server support article, and this app verifies the setting after each change. If your Mac does not accept the setting, the app should show the underlying `pmset` or administrator-prompt error and leave the current state unchanged.
 

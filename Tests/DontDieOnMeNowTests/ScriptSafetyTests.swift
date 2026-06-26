@@ -11,9 +11,11 @@ final class ScriptSafetyTests: XCTestCase {
     func testFailsafeCleanupIncludesTemporaryDeadlineFile() throws {
         let failsafe = try readScript("failsafe_check.sh")
         let restoreNow = try readScript("restore_sleep_now.sh")
+        let safetyStatus = try readScript("safety_status.sh")
 
         XCTAssertTrue(failsafe.contains("deadline.tmp"))
         XCTAssertTrue(restoreNow.contains("deadline.tmp"))
+        XCTAssertTrue(safetyStatus.contains("com.josh.DontDieOnMeNow.restore"))
     }
 
     func testShellScriptsUseStrictMode() throws {

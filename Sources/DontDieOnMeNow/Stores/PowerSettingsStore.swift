@@ -59,7 +59,7 @@ final class PowerSettingsStore: ObservableObject {
             if let remaining = remainingTime, remaining > 0 {
                 return Self.formatRemaining(remaining)
             }
-            return activeUntil == nil ? "Awake" : "Expired"
+            return activeUntil == nil ? "Awake" : "Still Awake"
         case .normal:
             return "Ready"
         case .unknown:
@@ -123,7 +123,7 @@ final class PowerSettingsStore: ObservableObject {
             if let remaining = remainingTime, remaining > 0 {
                 return "Codex and Claude Code can keep running."
             }
-            return "Sleep is still disabled."
+            return "Timer ended, but sleep is still disabled."
         case .normal:
             return "Choose a duration, then keep this Mac awake."
         case .unknown:
@@ -187,7 +187,7 @@ final class PowerSettingsStore: ObservableObject {
             if let remaining = remainingTime, remaining > 0 {
                 return Self.formatRemaining(remaining)
             }
-            return "Expired"
+            return "Still Awake"
         case .normal, .unknown:
             return nil
         }
@@ -205,7 +205,7 @@ final class PowerSettingsStore: ObservableObject {
             if let remaining = remainingTime, remaining > 0 {
                 return "left"
             }
-            return "Stop to restore normal sleep."
+            return "Timer ended. Stop to restore normal sleep."
         case .normal, .unknown:
             return nil
         }

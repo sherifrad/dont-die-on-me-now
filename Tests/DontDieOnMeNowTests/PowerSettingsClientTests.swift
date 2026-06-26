@@ -42,10 +42,14 @@ final class PowerSettingsClientTests: XCTestCase {
             timedRestore: TimedRestore(seconds: 21_600, token: "token-1")
         )
 
-        XCTAssertTrue(command.contains("/bin/sleep 21600"))
+        XCTAssertTrue(command.contains("/bin/sleep \"$((deadline - now))\""))
         XCTAssertTrue(command.contains("/usr/bin/pmset -a disablesleep 1"))
         XCTAssertTrue(command.contains("/usr/bin/pmset -a disablesleep 0"))
-        XCTAssertTrue(command.contains("/usr/bin/nohup /bin/sh -c"))
+        XCTAssertTrue(command.contains("/bin/launchctl bootstrap system"))
+        XCTAssertTrue(command.contains("com.josh.DontDieOnMeNow.restore"))
+        XCTAssertTrue(command.contains("/Library/LaunchDaemons/com.josh.DontDieOnMeNow.restore.plist"))
+        XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow/restore_once.sh"))
+        XCTAssertFalse(command.contains("/usr/bin/nohup"))
         XCTAssertTrue(command.contains("token-1"))
         XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow"))
         XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow/deadline"))
@@ -63,7 +67,7 @@ final class PowerSettingsClientTests: XCTestCase {
         )
 
         let deadlineRange = command.range(of: "/bin/echo $(( $(/bin/date +%s) + 21600 ))")
-        let restoreRange = command.range(of: "/usr/bin/nohup /bin/sh -c")
+        let restoreRange = command.range(of: "/bin/launchctl bootstrap system")
         let disableRange = command.range(of: "/usr/bin/pmset -a disablesleep 1")
 
         XCTAssertNotNil(deadlineRange)
@@ -80,7 +84,7 @@ final class PowerSettingsClientTests: XCTestCase {
         )
 
         let sessionRange = command.range(of: "/bin/echo 'token-1'")
-        let restoreRange = command.range(of: "/usr/bin/nohup /bin/sh -c")
+        let restoreRange = command.range(of: "/bin/launchctl bootstrap system")
 
         XCTAssertNotNil(sessionRange)
         XCTAssertNotNil(restoreRange)
@@ -93,6 +97,9 @@ final class PowerSettingsClientTests: XCTestCase {
         XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow/session"))
         XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow/deadline"))
         XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow/deadline.tmp"))
+        XCTAssertTrue(command.contains("/Library/LaunchDaemons/com.josh.DontDieOnMeNow.restore.plist"))
+        XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow/restore_once.sh"))
+        XCTAssertTrue(command.contains("/bin/launchctl bootout system"))
     }
 
     func testTimedRestoreShellCommandIsValidShSyntax() throws {

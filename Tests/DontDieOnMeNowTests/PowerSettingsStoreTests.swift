@@ -197,7 +197,11 @@ final class PowerSettingsStoreTests: XCTestCase {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
             XCTAssertEqual(store.statusTitle, "Needs Attention")
+            XCTAssertEqual(store.statusDetail, "Timer ended, but sleep is still disabled.")
+            XCTAssertEqual(store.menuBarTitle, "Still Awake")
             XCTAssertEqual(store.menuBarSystemImage, "exclamationmark.triangle.fill")
+            XCTAssertEqual(store.activeSessionValue, "Still Awake")
+            XCTAssertEqual(store.activeSessionCaption, "Timer ended. Stop to restore normal sleep.")
             XCTAssertNotNil(store.activeUntil)
             expectation.fulfill()
         }
