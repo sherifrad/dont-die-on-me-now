@@ -16,7 +16,8 @@ final class PowerSettingsStoreTests: XCTestCase {
         let defaults = makeDefaults()
         let store = PowerSettingsStore(client: client, defaults: defaults)
 
-        XCTAssertEqual(store.actionTitle, "Refresh State")
+        XCTAssertEqual(store.actionTitle, "Check Again")
+        XCTAssertEqual(store.menuBarSystemImage, "moon.circle")
         store.performPrimaryAction()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
@@ -108,6 +109,10 @@ final class PowerSettingsStoreTests: XCTestCase {
             XCTAssertNotNil(store.activeUntil)
             XCTAssertNotNil(defaults.object(forKey: "sessionStartedAt"))
             XCTAssertEqual(store.snapshot.sleepSetting, .disabled)
+            XCTAssertEqual(store.statusTitle, "Awake")
+            XCTAssertEqual(store.actionTitle, "Stop")
+            XCTAssertTrue(["6h", "5h 59m"].contains(store.activeSessionValue ?? ""))
+            XCTAssertEqual(store.activeSessionCaption, "left")
             expectation.fulfill()
         }
 
@@ -191,7 +196,7 @@ final class PowerSettingsStoreTests: XCTestCase {
         store.refresh()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
-            XCTAssertEqual(store.statusTitle, "Timer Expired")
+            XCTAssertEqual(store.statusTitle, "Needs Attention")
             XCTAssertEqual(store.menuBarSystemImage, "exclamationmark.triangle.fill")
             XCTAssertNotNil(store.activeUntil)
             expectation.fulfill()
@@ -226,12 +231,13 @@ final class PowerSettingsStoreTests: XCTestCase {
             XCTAssertTrue(store.timedRestoreWasLost)
             XCTAssertEqual(store.menuBarTitle, "Timer Lost")
             XCTAssertEqual(store.menuBarSystemImage, "exclamationmark.triangle.fill")
-            XCTAssertEqual(store.statusTitle, "Timer Needs Restart")
+            XCTAssertEqual(store.statusTitle, "Needs Attention")
             XCTAssertEqual(
                 store.statusDetail,
-                "The Mac restarted, so automatic restore is no longer scheduled."
+                "Automatic restore was lost after restart."
             )
-            XCTAssertEqual(store.sessionSummary, "Restart the timer or enable sleep.")
+            XCTAssertEqual(store.activeSessionValue, "Timer Lost")
+            XCTAssertEqual(store.activeSessionCaption, "Stop, then start a new timer.")
             expectation.fulfill()
         }
 

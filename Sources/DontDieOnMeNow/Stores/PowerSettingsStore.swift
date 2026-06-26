@@ -37,6 +37,7 @@ final class PowerSettingsStore: ObservableObject {
         let storedActiveUntil = defaults.double(forKey: DefaultsKey.activeUntil)
         if storedActiveUntil > 0 {
             activeUntil = Date(timeIntervalSince1970: storedActiveUntil)
+            snapshot = PowerSettingsSnapshot(sleepSetting: .disabled, rawOutput: "")
         }
 
         let storedSessionStartedAt = defaults.double(forKey: DefaultsKey.sessionStartedAt)
@@ -47,7 +48,7 @@ final class PowerSettingsStore: ObservableObject {
 
     var menuBarTitle: String {
         if isWorking {
-            return "Working"
+            return "Checking"
         }
 
         switch snapshot.sleepSetting {
@@ -60,15 +61,15 @@ final class PowerSettingsStore: ObservableObject {
             }
             return activeUntil == nil ? "Awake" : "Expired"
         case .normal:
-            return "Sleep OK"
+            return "Ready"
         case .unknown:
-            return "Unknown"
+            return "Checking"
         }
     }
 
     var menuBarSystemImage: String {
         if isWorking {
-            return "arrow.triangle.2.circlepath"
+            return "arrow.triangle.2.circlepath.circle.fill"
         }
 
         switch snapshot.sleepSetting {
@@ -84,9 +85,9 @@ final class PowerSettingsStore: ObservableObject {
             }
             return "exclamationmark.triangle.fill"
         case .normal:
-            return "moon"
+            return "moon.circle.fill"
         case .unknown:
-            return "questionmark.circle"
+            return "moon.circle"
         }
     }
 
@@ -94,19 +95,19 @@ final class PowerSettingsStore: ObservableObject {
         switch snapshot.sleepSetting {
         case .disabled:
             if timedRestoreWasLost {
-                return "Timer Needs Restart"
+                return "Needs Attention"
             }
             if activeUntil == nil {
-                return "Awake Indefinitely"
+                return "Awake"
             }
             if let remaining = remainingTime, remaining > 0 {
-                return "Timed Awake"
+                return "Awake"
             }
-            return "Timer Expired"
+            return "Needs Attention"
         case .normal:
-            return "Normal Sleep"
+            return "Ready"
         case .unknown:
-            return "State Unknown"
+            return "Checking"
         }
     }
 
@@ -114,37 +115,37 @@ final class PowerSettingsStore: ObservableObject {
         switch snapshot.sleepSetting {
         case .disabled:
             if timedRestoreWasLost {
-                return "The Mac restarted, so automatic restore is no longer scheduled."
+                return "Automatic restore was lost after restart."
             }
             if activeUntil == nil {
-                return "Codex and Claude Code can keep running until you restore sleep."
+                return "Codex and Claude Code can keep running."
             }
             if let remaining = remainingTime, remaining > 0 {
-                return "Restores normal sleep in \(Self.formatRemaining(remaining))."
+                return "Codex and Claude Code can keep running."
             }
-            return "The timer ended, but this Mac still reports sleep disabled."
+            return "Sleep is still disabled."
         case .normal:
-            return "The Mac can sleep normally when idle or when the lid is closed."
+            return "Choose a duration, then keep this Mac awake."
         case .unknown:
-            return "The current pmset output could not be read."
+            return "Reading the current sleep setting."
         }
     }
 
     var actionTitle: String {
         switch snapshot.sleepSetting {
         case .disabled:
-            return "Enable Sleep"
+            return "Stop"
         case .normal:
             return selectedDuration.actionLabel
         case .unknown:
-            return "Refresh State"
+            return "Check Again"
         }
     }
 
     var actionSystemImage: String {
         switch snapshot.sleepSetting {
         case .disabled:
-            return "moon"
+            return "stop.circle.fill"
         case .normal:
             return selectedDuration == .indefinite ? "infinity.circle.fill" : "timer.circle.fill"
         case .unknown:
@@ -174,27 +175,39 @@ final class PowerSettingsStore: ObservableObject {
         return bootDateProvider() > sessionStartedAt
     }
 
-    var canRestartTimer: Bool {
-        snapshot.sleepSetting.isDisabled
-    }
-
-    var sessionSummary: String {
+    var activeSessionValue: String? {
         switch snapshot.sleepSetting {
         case .disabled:
             if timedRestoreWasLost {
-                return "Restart the timer or enable sleep."
+                return "Timer Lost"
             }
             if activeUntil == nil {
-                return "No automatic restore is scheduled."
+                return "Until Stopped"
             }
             if let remaining = remainingTime, remaining > 0 {
-                return "Automatic restore in \(Self.formatRemaining(remaining))."
+                return Self.formatRemaining(remaining)
             }
-            return "Automatic restore should have already run."
-        case .normal:
-            return "Next awake session: \(selectedDuration.label)."
-        case .unknown:
-            return "Refresh before changing sleep."
+            return "Expired"
+        case .normal, .unknown:
+            return nil
+        }
+    }
+
+    var activeSessionCaption: String? {
+        switch snapshot.sleepSetting {
+        case .disabled:
+            if timedRestoreWasLost {
+                return "Stop, then start a new timer."
+            }
+            if activeUntil == nil {
+                return "Manual session"
+            }
+            if let remaining = remainingTime, remaining > 0 {
+                return "left"
+            }
+            return "Stop to restore normal sleep."
+        case .normal, .unknown:
+            return nil
         }
     }
 
@@ -228,8 +241,8 @@ final class PowerSettingsStore: ObservableObject {
                 throw PowerSettingsStoreError.verificationFailed(expectedDisabled: true)
             }
             let message = targetActiveUntil.map {
-                "Sleep disabled for \(Self.formatRemaining($0.timeIntervalSinceNow))."
-            } ?? "Sleep disabled until you restore it."
+                "Keeping awake for \(Self.formatRemaining($0.timeIntervalSinceNow))."
+            } ?? "Keeping awake until stopped."
             return StoreUpdate(
                 snapshot: snapshot,
                 sessionMutation: .set(
@@ -243,7 +256,7 @@ final class PowerSettingsStore: ObservableObject {
     }
 
     func restoreSleep() {
-        runWork(successMessage: "Normal sleep is enabled.") { [client] in
+        runWork(successMessage: "Stopped. Normal sleep is on.") { [client] in
             try client.setSleepDisabled(false, nil, "off")
             let snapshot = try client.readSnapshot()
             guard !snapshot.sleepSetting.isDisabled else {
@@ -252,7 +265,7 @@ final class PowerSettingsStore: ObservableObject {
             return StoreUpdate(
                 snapshot: snapshot,
                 sessionMutation: .clear,
-                statusMessage: "Normal sleep is enabled."
+                statusMessage: "Stopped. Normal sleep is on."
             )
         }
     }

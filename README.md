@@ -64,7 +64,7 @@ From a release zip:
 
 Because this is an unsigned dev utility, macOS may block the first launch. If that happens, Control-click the app in Finder, choose Open, then confirm. After the first accepted launch, it should open normally.
 
-The app appears in the macOS menu bar, not the Dock. Click the menu bar item to enable or disable sleep.
+The app appears in the macOS menu bar, not the Dock. Click the menu bar item, choose a duration, then click Keep Awake. When it is running, click Stop to restore normal sleep.
 
 ## Run At Login
 
@@ -110,7 +110,7 @@ The menu bar icon changes by mode:
 - timer: timed awake session
 - infinity: awake until manually restored
 - warning: timer expired, or the timed restore was lost after a restart
-- question mark: state unknown
+- moon outline: checking current state
 
 Verify the staged app launches:
 
@@ -156,7 +156,7 @@ This is intentionally small:
 
 The tradeoff is that each toggle uses the normal macOS administrator prompt.
 
-Because this app intentionally avoids login items, launch daemons, and privileged helpers, it cannot automatically fix sleep settings before it is running. If the Mac reboots during a timed session, launch the app and choose Restart Timer or Enable Sleep.
+Because this app intentionally avoids login items, launch daemons, and privileged helpers, it cannot automatically fix sleep settings before it is running. If the Mac reboots during a timed session, launch the app and choose Stop or start a new Keep Awake session.
 
 `disablesleep` is visible in `pmset -g` on supported systems, but it is not documented in every local `pmset` man page. Apple documents `sudo pmset -a disablesleep 1` in an OS X Server support article, and this app verifies the setting after each change. If your Mac does not accept the setting, the app should show the underlying `pmset` or administrator-prompt error and leave the current state unchanged.
 

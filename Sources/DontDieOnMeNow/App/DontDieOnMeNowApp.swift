@@ -16,9 +16,13 @@ struct DontDieOnMeNowApp: App {
         MenuBarExtra {
             MenuBarView(store: store)
         } label: {
-            Label(store.menuBarTitle, systemImage: store.menuBarSystemImage)
+            HStack(spacing: 4) {
+                Image(systemName: store.menuBarSystemImage)
+                    .font(.system(size: 16, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                Text(store.menuBarTitle)
+            }
         }
         .menuBarExtraStyle(.window)
     }
 }
-
