@@ -14,6 +14,8 @@ final class PowerSettingsStore: ObservableObject {
     private let bootDateProvider: () -> Date
     private var sessionToken: String?
     private var sessionStartedAt: Date?
+    private var tickTimer: Timer?
+    private var didRequestExpiredSessionRefresh = false
 
     private enum DefaultsKey {
         static let selectedDuration = "selectedDuration"
@@ -29,6 +31,8 @@ final class PowerSettingsStore: ObservableObject {
     init(
         client: PowerSettingsClient,
         defaults: UserDefaults = .standard,
+        automaticallyTicks: Bool = false,
+        tickInterval: TimeInterval = 1,
         bootDateProvider: @escaping () -> Date = {
             Date(timeIntervalSinceNow: -ProcessInfo.processInfo.systemUptime)
         }
@@ -52,6 +56,14 @@ final class PowerSettingsStore: ObservableObject {
         if storedSessionStartedAt > 0 {
             sessionStartedAt = Date(timeIntervalSince1970: storedSessionStartedAt)
         }
+
+        if automaticallyTicks {
+            startAutomaticTicks(every: tickInterval)
+        }
+    }
+
+    deinit {
+        tickTimer?.invalidate()
     }
 
     var customDurationLabel: String {
@@ -296,9 +308,26 @@ final class PowerSettingsStore: ObservableObject {
     func tick() {
         objectWillChange.send()
 
-        if let activeUntil, activeUntil <= Date(), snapshot.sleepSetting.isDisabled, !isWorking {
+        if let activeUntil,
+           activeUntil <= Date(),
+           snapshot.sleepSetting.isDisabled,
+           !isWorking,
+           !didRequestExpiredSessionRefresh {
+            didRequestExpiredSessionRefresh = true
             refresh()
         }
+    }
+
+    private func startAutomaticTicks(every interval: TimeInterval) {
+        guard tickTimer == nil else {
+            return
+        }
+
+        let timer = Timer(timeInterval: max(0.01, interval), repeats: true) { [weak self] _ in
+            self?.tick()
+        }
+        tickTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func runWork(
@@ -348,6 +377,7 @@ final class PowerSettingsStore: ObservableObject {
             self.activeUntil = activeUntil
             sessionToken = token
             sessionStartedAt = startedAt
+            didRequestExpiredSessionRefresh = false
             if let activeUntil {
                 defaults.set(activeUntil.timeIntervalSince1970, forKey: DefaultsKey.activeUntil)
             } else {
@@ -368,6 +398,7 @@ final class PowerSettingsStore: ObservableObject {
         activeUntil = nil
         sessionToken = nil
         sessionStartedAt = nil
+        didRequestExpiredSessionRefresh = false
         defaults.removeObject(forKey: DefaultsKey.activeUntil)
         defaults.removeObject(forKey: DefaultsKey.sessionToken)
         defaults.removeObject(forKey: DefaultsKey.sessionStartedAt)
