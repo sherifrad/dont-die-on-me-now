@@ -5,6 +5,7 @@ enum AwakeDuration: String, CaseIterable, Identifiable, Equatable {
     case threeHours
     case sixHours
     case twelveHours
+    case custom
     case indefinite
 
     var id: String {
@@ -27,6 +28,8 @@ enum AwakeDuration: String, CaseIterable, Identifiable, Equatable {
             return 6 * 60 * 60
         case .twelveHours:
             return 12 * 60 * 60
+        case .custom:
+            return nil
         case .indefinite:
             return nil
         }
@@ -42,15 +45,28 @@ enum AwakeDuration: String, CaseIterable, Identifiable, Equatable {
             return "6 hours"
         case .twelveHours:
             return "12 hours"
+        case .custom:
+            return "Custom"
         case .indefinite:
             return "Until I restore it"
         }
     }
 
-    var actionLabel: String {
+    func seconds(customMinutes: Int) -> Int? {
+        switch self {
+        case .custom:
+            return customMinutes * 60
+        default:
+            return seconds
+        }
+    }
+
+    func actionLabel(customLabel: String) -> String {
         switch self {
         case .indefinite:
             return "Keep Awake"
+        case .custom:
+            return "Keep Awake \(customLabel)"
         default:
             return "Keep Awake \(label)"
         }
@@ -61,4 +77,3 @@ struct TimedRestore: Equatable {
     let seconds: Int
     let token: String
 }
-

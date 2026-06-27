@@ -7,6 +7,7 @@ final class PowerSettingsStore: ObservableObject {
     @Published private(set) var statusMessage: String?
     @Published private(set) var activeUntil: Date?
     @Published private(set) var selectedDuration: AwakeDuration
+    @Published private(set) var customDurationMinutes: Int
 
     private let client: PowerSettingsClient
     private let defaults: UserDefaults
@@ -19,7 +20,11 @@ final class PowerSettingsStore: ObservableObject {
         static let activeUntil = "activeUntil"
         static let sessionToken = "sessionToken"
         static let sessionStartedAt = "sessionStartedAt"
+        static let customDurationMinutes = "customDurationMinutes"
     }
+
+    private static let defaultCustomDurationMinutes = 2 * 60
+    private static let customDurationRange = 5...(24 * 60)
 
     init(
         client: PowerSettingsClient,
@@ -32,6 +37,9 @@ final class PowerSettingsStore: ObservableObject {
         self.defaults = defaults
         self.bootDateProvider = bootDateProvider
         selectedDuration = AwakeDuration(storedValue: defaults.string(forKey: DefaultsKey.selectedDuration))
+        customDurationMinutes = Self.clampCustomDurationMinutes(
+            defaults.integer(forKey: DefaultsKey.customDurationMinutes)
+        )
         sessionToken = defaults.string(forKey: DefaultsKey.sessionToken)
 
         let storedActiveUntil = defaults.double(forKey: DefaultsKey.activeUntil)
@@ -44,6 +52,14 @@ final class PowerSettingsStore: ObservableObject {
         if storedSessionStartedAt > 0 {
             sessionStartedAt = Date(timeIntervalSince1970: storedSessionStartedAt)
         }
+    }
+
+    var customDurationLabel: String {
+        Self.formatDuration(minutes: customDurationMinutes)
+    }
+
+    var customDurationBounds: ClosedRange<Int> {
+        Self.customDurationRange
     }
 
     var menuBarTitle: String? {
@@ -127,7 +143,7 @@ final class PowerSettingsStore: ObservableObject {
         case .disabled:
             return "Stop"
         case .normal:
-            return selectedDuration.actionLabel
+            return selectedDuration.actionLabel(customLabel: customDurationLabel)
         case .unknown:
             return "Check Again"
         }
@@ -219,12 +235,13 @@ final class PowerSettingsStore: ObservableObject {
     func startAwakeSession() {
         let duration = selectedDuration
         let token = UUID().uuidString
-        let timedRestore = duration.seconds.map { TimedRestore(seconds: $0, token: token) }
+        let durationSeconds = duration.seconds(customMinutes: customDurationMinutes)
+        let timedRestore = durationSeconds.map { TimedRestore(seconds: $0, token: token) }
 
         runWork(successMessage: nil) { [client] in
             try client.setSleepDisabled(true, timedRestore, token)
             let completedAt = Date()
-            let targetActiveUntil = duration.seconds.map {
+            let targetActiveUntil = durationSeconds.map {
                 completedAt.addingTimeInterval(TimeInterval($0))
             }
             let snapshot = try client.readSnapshot()
@@ -268,6 +285,12 @@ final class PowerSettingsStore: ObservableObject {
     func setSelectedDuration(_ duration: AwakeDuration) {
         selectedDuration = duration
         defaults.set(duration.rawValue, forKey: DefaultsKey.selectedDuration)
+    }
+
+    func setCustomDurationMinutes(_ minutes: Int) {
+        let clampedMinutes = Self.clampCustomDurationMinutes(minutes)
+        customDurationMinutes = clampedMinutes
+        defaults.set(clampedMinutes, forKey: DefaultsKey.customDurationMinutes)
     }
 
     func tick() {
@@ -370,6 +393,29 @@ final class PowerSettingsStore: ObservableObject {
     private static func formatMenuBarRemaining(_ remaining: TimeInterval) -> String {
         let hours = max(1, Int(ceil(remaining / 3600)))
         return "\(hours)h"
+    }
+
+    private static func clampCustomDurationMinutes(_ minutes: Int) -> Int {
+        guard minutes > 0 else {
+            return defaultCustomDurationMinutes
+        }
+
+        return min(max(minutes, customDurationRange.lowerBound), customDurationRange.upperBound)
+    }
+
+    private static func formatDuration(minutes: Int) -> String {
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+
+        if hours > 0, remainingMinutes > 0 {
+            return "\(hours)h \(remainingMinutes)m"
+        }
+
+        if hours > 0 {
+            return "\(hours)h"
+        }
+
+        return "\(minutes)m"
     }
 }
 

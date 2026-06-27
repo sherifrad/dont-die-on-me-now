@@ -158,6 +158,64 @@ final class PowerSettingsStoreTests: XCTestCase {
         wait(for: [expectation], timeout: 1)
     }
 
+    func testCustomDurationSchedulesRestoreAndPersistsMinutes() {
+        let expectation = expectation(description: "custom start completes")
+        var capturedRestore: TimedRestore?
+        var readCount = 0
+        let client = PowerSettingsClient(
+            readSnapshot: {
+                readCount += 1
+                return PowerSettingsSnapshot(sleepSetting: readCount == 1 ? .normal : .disabled, rawOutput: "")
+            },
+            setSleepDisabled: { _, timedRestore, _ in
+                capturedRestore = timedRestore
+            }
+        )
+        let defaults = makeDefaults()
+        let store = PowerSettingsStore(client: client, defaults: defaults)
+        store.setSelectedDuration(.custom)
+        store.setCustomDurationMinutes(135)
+        store.refresh()
+
+        XCTAssertEqual(store.customDurationMinutes, 135)
+        XCTAssertEqual(store.customDurationLabel, "2h 15m")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
+            XCTAssertEqual(store.actionTitle, "Keep Awake 2h 15m")
+            store.startAwakeSession()
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
+            XCTAssertEqual(capturedRestore?.seconds, 8_100)
+            XCTAssertEqual(defaults.integer(forKey: "customDurationMinutes"), 135)
+            XCTAssertEqual(defaults.string(forKey: "selectedDuration"), AwakeDuration.custom.rawValue)
+            XCTAssertTrue(
+                store.activeSessionValue?.range(of: #"^(2h 15m 0s|2h 14m 59s)$"#, options: .regularExpression) != nil,
+                store.activeSessionValue ?? ""
+            )
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
+    func testCustomDurationDefaultsAndClamps() {
+        let defaults = makeDefaults()
+        let store = PowerSettingsStore(client: .noop, defaults: defaults)
+
+        XCTAssertEqual(store.customDurationMinutes, 120)
+        XCTAssertEqual(store.customDurationLabel, "2h")
+
+        store.setCustomDurationMinutes(-10)
+        XCTAssertEqual(store.customDurationMinutes, 120)
+
+        store.setCustomDurationMinutes(2)
+        XCTAssertEqual(store.customDurationMinutes, 5)
+
+        store.setCustomDurationMinutes(2_000)
+        XCTAssertEqual(store.customDurationMinutes, 1_440)
+    }
+
     func testRefreshClearsStaleTimedSessionWhenSleepIsNormal() {
         let expectation = expectation(description: "refresh completes")
         let defaults = makeDefaults()
@@ -298,4 +356,13 @@ final class PowerSettingsStoreTests: XCTestCase {
         defaults.removePersistentDomain(forName: suiteName)
         return defaults
     }
+}
+
+private extension PowerSettingsClient {
+    static let noop = PowerSettingsClient(
+        readSnapshot: {
+            PowerSettingsSnapshot(sleepSetting: .normal, rawOutput: "SleepDisabled 0")
+        },
+        setSleepDisabled: { _, _, _ in }
+    )
 }

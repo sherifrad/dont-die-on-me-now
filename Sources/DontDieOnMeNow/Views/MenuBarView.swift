@@ -91,27 +91,70 @@ struct MenuBarView: View {
     }
 
     private var durationPicker: some View {
-        HStack(spacing: 10) {
-            Text("Duration")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Spacer()
-            Picker(
-                "Duration",
-                selection: Binding(
-                    get: { store.selectedDuration },
-                    set: { store.setSelectedDuration($0) }
-                )
-            ) {
-                ForEach(AwakeDuration.allCases) { duration in
-                    Text(duration.label).tag(duration)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text("Duration")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Picker(
+                    "Duration",
+                    selection: Binding(
+                        get: { store.selectedDuration },
+                        set: { store.setSelectedDuration($0) }
+                    )
+                ) {
+                    ForEach(AwakeDuration.allCases) { duration in
+                        Text(duration.label).tag(duration)
+                    }
                 }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 168)
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .frame(width: 168)
+
+            if store.selectedDuration == .custom {
+                customDurationEditor
+            }
         }
         .disabled(store.isWorking)
+    }
+
+    private var customDurationEditor: some View {
+        HStack(spacing: 8) {
+            TextField(
+                "Minutes",
+                value: Binding(
+                    get: { store.customDurationMinutes },
+                    set: { store.setCustomDurationMinutes($0) }
+                ),
+                format: .number
+            )
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 68)
+
+            Text("min")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Stepper(
+                "",
+                value: Binding(
+                    get: { store.customDurationMinutes },
+                    set: { store.setCustomDurationMinutes($0) }
+                ),
+                in: store.customDurationBounds,
+                step: 5
+            )
+            .labelsHidden()
+
+            Spacer()
+
+            Text(store.customDurationLabel)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 52, alignment: .trailing)
+        }
     }
 
     private var primaryButton: some View {

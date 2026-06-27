@@ -6,7 +6,7 @@ macOS normally sleeps when you close the lid. That can pause long-running Codex 
 
 ## What It Does
 
-- Keeps the Mac awake for 1 hour, 3 hours, 6 hours, or 12 hours.
+- Keeps the Mac awake for 1 hour, 3 hours, 6 hours, 12 hours, or a custom duration.
 - Defaults to 6 hours.
 - Also supports "Until I restore it" for a manual session.
 - Shows a countdown while a timed session is running.
@@ -37,7 +37,7 @@ The app appears in the menu bar, not the Dock.
 ## Use It
 
 1. Click the menu bar icon.
-2. Pick a duration.
+2. Pick a duration, or choose Custom and enter minutes.
 3. Click Keep Awake.
 4. Click Stop when you want normal sleep back.
 
