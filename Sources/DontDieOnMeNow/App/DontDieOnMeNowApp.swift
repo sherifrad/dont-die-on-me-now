@@ -10,7 +10,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct DontDieOnMeNowApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var store = PowerSettingsStore(client: .live, automaticallyTicks: true)
+    @StateObject private var store = PowerSettingsStore(
+        client: .live,
+        automaticallyTicks: true,
+        refreshOnStart: true
+    )
 
     var body: some Scene {
         MenuBarExtra {

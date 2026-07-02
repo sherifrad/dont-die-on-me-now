@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_PATH="${1:-/Applications/Don't Die On Me Now.app}"
+DEFAULT_APP_PATH="/Applications/Don't Die On Me Now.app"
+APP_PATH="${1:-$DEFAULT_APP_PATH}"
 LABEL="com.josh.DontDieOnMeNow.login"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
