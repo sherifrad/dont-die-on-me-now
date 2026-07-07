@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_APP_PATH="/Applications/Don't Die On Me Now.app"
-APP_PATH="${1:-$DEFAULT_APP_PATH}"
+USER_APP_PATH="$HOME/Applications/Don't Die On Me Now.app"
+SYSTEM_APP_PATH="/Applications/Don't Die On Me Now.app"
+
+default_app_path() {
+  if [ -d "$USER_APP_PATH" ]; then
+    printf '%s\n' "$USER_APP_PATH"
+  else
+    printf '%s\n' "$SYSTEM_APP_PATH"
+  fi
+}
+
+APP_PATH="${1:-$(default_app_path)}"
 LABEL="com.josh.DontDieOnMeNow.login"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
@@ -17,8 +27,7 @@ xml_escape() {
 if [ ! -d "$APP_PATH" ]; then
   echo "App not found: $APP_PATH" >&2
   echo "Build and install it first:" >&2
-  echo "  ./script/build_and_run.sh --build-only" >&2
-  echo "  cp -R \"dist/Don't Die On Me Now.app\" /Applications/" >&2
+  echo "  ./script/install_app.sh" >&2
   exit 1
 fi
 

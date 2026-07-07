@@ -1,10 +1,9 @@
 import Foundation
 
 enum AwakeDuration: String, CaseIterable, Identifiable, Equatable {
-    case oneHour
-    case threeHours
+    case thirtyMinutes
+    case twoHours
     case sixHours
-    case twelveHours
     case custom
     case indefinite
 
@@ -13,6 +12,7 @@ enum AwakeDuration: String, CaseIterable, Identifiable, Equatable {
     }
 
     static let defaultDuration: AwakeDuration = .sixHours
+    static let visiblePresets: [AwakeDuration] = [.thirtyMinutes, .twoHours, .sixHours]
 
     init(storedValue: String?) {
         self = storedValue.flatMap(AwakeDuration.init(rawValue:)) ?? .defaultDuration
@@ -20,14 +20,12 @@ enum AwakeDuration: String, CaseIterable, Identifiable, Equatable {
 
     var seconds: Int? {
         switch self {
-        case .oneHour:
-            return 60 * 60
-        case .threeHours:
-            return 3 * 60 * 60
+        case .thirtyMinutes:
+            return 30 * 60
+        case .twoHours:
+            return 2 * 60 * 60
         case .sixHours:
             return 6 * 60 * 60
-        case .twelveHours:
-            return 12 * 60 * 60
         case .custom:
             return nil
         case .indefinite:
@@ -37,18 +35,31 @@ enum AwakeDuration: String, CaseIterable, Identifiable, Equatable {
 
     var label: String {
         switch self {
-        case .oneHour:
-            return "1 hour"
-        case .threeHours:
-            return "3 hours"
+        case .thirtyMinutes:
+            return "30 minutes"
+        case .twoHours:
+            return "2 hours"
         case .sixHours:
             return "6 hours"
-        case .twelveHours:
-            return "12 hours"
         case .custom:
             return "Custom"
         case .indefinite:
             return "Until I restore it"
+        }
+    }
+
+    var compactLabel: String {
+        switch self {
+        case .thirtyMinutes:
+            return "30m"
+        case .twoHours:
+            return "2h"
+        case .sixHours:
+            return "6h"
+        case .custom:
+            return "Custom"
+        case .indefinite:
+            return "∞"
         }
     }
 
@@ -76,4 +87,11 @@ enum AwakeDuration: String, CaseIterable, Identifiable, Equatable {
 struct TimedRestore: Equatable {
     let seconds: Int
     let token: String
+    let cancelFilePath: String?
+
+    init(seconds: Int, token: String, cancelFilePath: String? = nil) {
+        self.seconds = seconds
+        self.token = token
+        self.cancelFilePath = cancelFilePath
+    }
 }

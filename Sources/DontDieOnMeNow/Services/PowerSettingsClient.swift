@@ -3,11 +3,23 @@ import Foundation
 struct PowerSettingsClient {
     var readSnapshot: () throws -> PowerSettingsSnapshot
     var setSleepDisabled: (_ disabled: Bool, _ timedRestore: TimedRestore?, _ sessionToken: String?) throws -> Void
+    var requestTimedRestoreCancellation: (_ token: String) throws -> Void
+
+    init(
+        readSnapshot: @escaping () throws -> PowerSettingsSnapshot,
+        setSleepDisabled: @escaping (_ disabled: Bool, _ timedRestore: TimedRestore?, _ sessionToken: String?) throws -> Void,
+        requestTimedRestoreCancellation: @escaping (_ token: String) throws -> Void = { _ in }
+    ) {
+        self.readSnapshot = readSnapshot
+        self.setSleepDisabled = setSleepDisabled
+        self.requestTimedRestoreCancellation = requestTimedRestoreCancellation
+    }
 }
 
 extension PowerSettingsClient {
     static let live: PowerSettingsClient = {
         let runner = FoundationProcessRunner()
+        let helper = PrivilegedHelperClient()
 
         return PowerSettingsClient(
             readSnapshot: {
@@ -22,9 +34,29 @@ extension PowerSettingsClient {
                 return PowerSettingsParser.parse(result.stdout)
             },
             setSleepDisabled: { disabled, timedRestore, sessionToken in
+                let preparedTimedRestore: TimedRestore?
+                if let timedRestore {
+                    preparedTimedRestore = try TimedRestoreCancellation.preparedRestore(from: timedRestore)
+                } else {
+                    preparedTimedRestore = nil
+                }
+
+                if helper.isInstalled {
+                    do {
+                        try helper.setSleepDisabled(
+                            disabled: disabled,
+                            timedRestore: preparedTimedRestore,
+                            sessionToken: sessionToken
+                        )
+                        return
+                    } catch {
+                        // Fall back to macOS's built-in administrator prompt if the optional helper is unhealthy.
+                    }
+                }
+
                 let script = PrivilegedPowerCommand.appleScript(
                     disabled: disabled,
-                    timedRestore: timedRestore,
+                    timedRestore: preparedTimedRestore,
                     sessionToken: sessionToken
                 )
                 let result = try runner.run("/usr/bin/osascript", arguments: ["-e", script])
@@ -41,6 +73,9 @@ extension PowerSettingsClient {
                         stderr: result.stderr
                     )
                 }
+            },
+            requestTimedRestoreCancellation: { token in
+                try TimedRestoreCancellation.requestCancellation(token: token)
             }
         )
     }()

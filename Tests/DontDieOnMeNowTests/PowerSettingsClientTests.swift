@@ -42,7 +42,8 @@ final class PowerSettingsClientTests: XCTestCase {
             timedRestore: TimedRestore(seconds: 21_600, token: "token-1")
         )
 
-        XCTAssertTrue(command.contains("/bin/sleep \"$((deadline - now))\""))
+        XCTAssertTrue(command.contains("sleep_interval=2"))
+        XCTAssertTrue(command.contains("while :; do"))
         XCTAssertTrue(command.contains("/usr/bin/pmset -a disablesleep 1"))
         XCTAssertTrue(command.contains("/usr/bin/pmset -a disablesleep 0"))
         XCTAssertTrue(command.contains("/bin/launchctl bootstrap system"))
@@ -58,6 +59,163 @@ final class PowerSettingsClientTests: XCTestCase {
         XCTAssertTrue(command.contains("/bin/mv -f"))
         XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow/deadline.tmp"))
         XCTAssertFalse(command.contains("/var/tmp"))
+    }
+
+    func testTimedRestoreLogsSuccessAndTokenMismatch() {
+        let command = PrivilegedPowerCommand.shellCommand(
+            disabled: true,
+            timedRestore: TimedRestore(seconds: 21_600, token: "token-1")
+        )
+
+        XCTAssertTrue(command.contains("DontDieOnMeNow restore: deadline reached; restoring normal sleep."))
+        XCTAssertTrue(command.contains("DontDieOnMeNow restore: normal sleep restored."))
+        XCTAssertTrue(command.contains("DontDieOnMeNow restore: session token changed; leaving sleep setting unchanged."))
+    }
+
+    func testTimedRestoreScriptCanBeCancelledWithoutAnotherPrivilegePrompt() {
+        let command = PrivilegedPowerCommand.shellCommand(
+            disabled: true,
+            timedRestore: TimedRestore(
+                seconds: 21_600,
+                token: "token-1",
+                cancelFilePath: "/Users/dev/Library/Application Support/DontDieOnMeNow/timed-cancel"
+            )
+        )
+
+        XCTAssertTrue(command.contains("CANCEL_FILE="))
+        XCTAssertTrue(command.contains("/Users/dev/Library/Application Support/DontDieOnMeNow/timed-cancel"))
+        XCTAssertTrue(command.contains("/bin/cat \"$CANCEL_FILE\""))
+        XCTAssertTrue(command.contains("DontDieOnMeNow restore: stop requested; restoring normal sleep."))
+        XCTAssertTrue(command.contains("\"$CANCEL_FILE\""))
+        XCTAssertTrue(command.contains("sleep_interval=2"))
+        XCTAssertFalse(command.contains("/bin/sleep \"$((deadline - now))\""))
+    }
+
+    func testPrivilegedHelperRequestUsesFixedKeyValueProtocol() {
+        let request = PrivilegedHelperRequest(
+            action: .start,
+            timedRestore: TimedRestore(
+                seconds: 3_600,
+                token: "token-1",
+                cancelFilePath: "/Users/dev/Library/Application Support/DontDieOnMeNow/timed-cancel"
+            ),
+            sessionToken: "token-1"
+        )
+
+        XCTAssertTrue(request.contents.contains("action=start\n"))
+        XCTAssertTrue(request.contents.contains("seconds=3600\n"))
+        XCTAssertTrue(request.contents.contains("token=token-1\n"))
+        XCTAssertTrue(request.contents.contains("cancel_file=/Users/dev/Library/Application Support/DontDieOnMeNow/timed-cancel\n"))
+        XCTAssertFalse(request.contents.contains("/usr/bin/pmset"))
+        XCTAssertFalse(request.contents.contains("do shell script"))
+    }
+
+    func testPrivilegedHelperRequestRejectsUnsafeValues() {
+        XCTAssertThrowsError(
+            try PrivilegedHelperRequest.validated(
+                action: .start,
+                timedRestore: TimedRestore(seconds: 3_600, token: "token; rm -rf /"),
+                sessionToken: "token; rm -rf /"
+            )
+        )
+        XCTAssertThrowsError(
+            try PrivilegedHelperRequest.validated(
+                action: .start,
+                timedRestore: TimedRestore(seconds: 3_600, token: "token-1", cancelFilePath: "../../../cancel"),
+                sessionToken: "token-1"
+            )
+        )
+    }
+
+    func testPrivilegedHelperClientRequiresLoadedLaunchDaemonForInstalledCheck() throws {
+        let temporaryDirectory = try makeTemporaryDirectory()
+        let requestDirectory = temporaryDirectory.appendingPathComponent("helper", isDirectory: true)
+        let launchDaemonURL = temporaryDirectory.appendingPathComponent("com.josh.DontDieOnMeNow.helper.plist")
+        try FileManager.default.createDirectory(
+            at: requestDirectory,
+            withIntermediateDirectories: true
+        )
+        let client = PrivilegedHelperClient(
+            requestDirectory: requestDirectory,
+            launchDaemonURL: launchDaemonURL,
+            isServiceLoaded: { false }
+        )
+
+        XCTAssertFalse(client.isInstalled)
+
+        FileManager.default.createFile(atPath: launchDaemonURL.path, contents: Data())
+
+        XCTAssertFalse(client.isInstalled)
+
+        let loadedClient = PrivilegedHelperClient(
+            requestDirectory: requestDirectory,
+            launchDaemonURL: launchDaemonURL,
+            isServiceLoaded: { true }
+        )
+
+        XCTAssertTrue(loadedClient.isInstalled)
+    }
+
+    func testPrivilegedHelperDefaultTimeoutKeepsFallbackResponsive() {
+        XCTAssertLessThanOrEqual(PrivilegedHelperClient.defaultResponseTimeout, 2)
+    }
+
+    func testPrivilegedHelperClientWritesRequestAndWaitsForMatchingResponse() throws {
+        let temporaryDirectory = try makeTemporaryDirectory()
+        let requestDirectory = temporaryDirectory.appendingPathComponent("helper", isDirectory: true)
+        let client = PrivilegedHelperClient(
+            requestDirectory: requestDirectory,
+            launchDaemonURL: temporaryDirectory.appendingPathComponent("helper.plist"),
+            responseTimeout: 1,
+            pollInterval: 0.01
+        )
+        let responseExpectation = expectation(description: "response written")
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let requestURL = requestDirectory.appendingPathComponent("request")
+            let responseURL = requestDirectory.appendingPathComponent("response")
+
+            while !FileManager.default.fileExists(atPath: requestURL.path) {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+
+            do {
+                let requestContents = try String(contentsOf: requestURL, encoding: .utf8)
+                let fields = Self.parseKeyValue(requestContents)
+                let requestID = fields["request_id"] ?? ""
+                try [
+                    "request_id=\(requestID)",
+                    "status=ok",
+                    "message=Started.",
+                    "sleep_disabled=1",
+                ].joined(separator: "\n")
+                    .appending("\n")
+                    .write(to: responseURL, atomically: true, encoding: .utf8)
+            } catch {
+                XCTFail(error.localizedDescription)
+            }
+
+            responseExpectation.fulfill()
+        }
+
+        try client.setSleepDisabled(
+            disabled: true,
+            timedRestore: TimedRestore(
+                seconds: 3_600,
+                token: "token-1",
+                cancelFilePath: "/Users/dev/Library/Application Support/DontDieOnMeNow/timed-cancel"
+            ),
+            sessionToken: "token-1"
+        )
+
+        let requestContents = try String(
+            contentsOf: requestDirectory.appendingPathComponent("request"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(requestContents.contains("action=start\n"))
+        XCTAssertTrue(requestContents.contains("seconds=3600\n"))
+        XCTAssertTrue(requestContents.contains("token=token-1\n"))
+        wait(for: [responseExpectation], timeout: 1)
     }
 
     func testTimedRestoreIsScheduledBeforeSleepIsDisabled() {
@@ -140,6 +298,27 @@ final class PowerSettingsClientTests: XCTestCase {
         XCTAssertEqual(AwakeDuration.defaultDuration.seconds, 21_600)
     }
 
+    func testAwakeDurationIncludesThirtyMinuteTestOption() {
+        XCTAssertTrue(AwakeDuration.allCases.contains(.thirtyMinutes))
+        XCTAssertEqual(AwakeDuration.thirtyMinutes.seconds, 1_800)
+        XCTAssertEqual(AwakeDuration.thirtyMinutes.label, "30 minutes")
+        XCTAssertEqual(AwakeDuration.thirtyMinutes.actionLabel(customLabel: "ignored"), "Keep Awake 30 minutes")
+    }
+
+    func testAwakeDurationVisiblePresetsAreSimpleMenuChoices() {
+        XCTAssertEqual(AwakeDuration.visiblePresets, [.thirtyMinutes, .twoHours, .sixHours])
+        XCTAssertEqual(AwakeDuration.thirtyMinutes.compactLabel, "30m")
+        XCTAssertEqual(AwakeDuration.twoHours.compactLabel, "2h")
+        XCTAssertEqual(AwakeDuration.sixHours.compactLabel, "6h")
+    }
+
+    func testAwakeDurationIncludesTwoHourPreset() {
+        XCTAssertTrue(AwakeDuration.allCases.contains(.twoHours))
+        XCTAssertEqual(AwakeDuration.twoHours.seconds, 7_200)
+        XCTAssertEqual(AwakeDuration.twoHours.label, "2 hours")
+        XCTAssertEqual(AwakeDuration.twoHours.actionLabel(customLabel: "ignored"), "Keep Awake 2 hours")
+    }
+
     private func assertValidShellSyntax(_ command: String) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -171,5 +350,29 @@ final class PowerSettingsClientTests: XCTestCase {
         let message = String(data: data, encoding: .utf8) ?? ""
         XCTAssertEqual(process.terminationStatus, 0, message)
         try? FileManager.default.removeItem(atPath: "/tmp/DontDieOnMeNowSyntaxCheck.scpt")
+    }
+
+    private func makeTemporaryDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DontDieOnMeNowTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: url,
+            withIntermediateDirectories: true
+        )
+        return url
+    }
+
+    private static func parseKeyValue(_ contents: String) -> [String: String] {
+        var fields: [String: String] = [:]
+
+        for line in contents.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2 else {
+                continue
+            }
+            fields[String(parts[0])] = String(parts[1])
+        }
+
+        return fields
     }
 }

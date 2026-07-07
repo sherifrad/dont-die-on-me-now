@@ -3,25 +3,30 @@ import SwiftUI
 
 struct MenuBarView: View {
     @ObservedObject var store: PowerSettingsStore
+    @State private var customMinutesText = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-                .padding(.horizontal, 18)
-                .padding(.top, 16)
-                .padding(.bottom, 14)
+            if !isReady {
+                header
+                    .padding(.horizontal, 18)
+                    .padding(.top, 16)
+                    .padding(.bottom, 14)
 
-            Divider()
-                .padding(.horizontal, 18)
+                Divider()
+                    .padding(.horizontal, 18)
+            }
 
             VStack(alignment: .leading, spacing: 14) {
                 if let activeSessionValue = store.activeSessionValue {
                     timerBlock(value: activeSessionValue, caption: store.activeSessionCaption)
                 } else if isReady {
-                    durationPicker
+                    readyControls
                 }
 
-                primaryButton
+                if !isReady {
+                    primaryButton
+                }
 
                 if store.snapshot.sleepSetting.isDisabled {
                     Label("Use a hard, ventilated surface.", systemImage: "thermometer.medium")
@@ -29,7 +34,7 @@ struct MenuBarView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if let statusMessage = store.statusMessage {
+                if let statusMessage = store.statusMessage, !isReady {
                     Text(statusMessage)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -38,7 +43,7 @@ struct MenuBarView: View {
                 }
             }
             .padding(.horizontal, 18)
-            .padding(.top, 14)
+            .padding(.top, isReady ? 12 : 14)
             .padding(.bottom, 12)
 
             Divider()
@@ -107,22 +112,22 @@ struct MenuBarView: View {
         .padding(.vertical, 4)
     }
 
-    private var durationPicker: some View {
+    private var readyControls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("DURATION")
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(.tertiary)
+            presetButtons
+            customDurationRow
 
-            durationChips
-
-            if store.selectedDuration == .custom {
-                customDurationEditor
+            if store.isWorking {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 2)
             }
         }
-        .disabled(store.isWorking)
+        .animation(.easeInOut(duration: 0.16), value: parsedCustomMinutes)
     }
 
-    private var durationChips: some View {
+    private var presetButtons: some View {
         let columns = [
             GridItem(.flexible(), spacing: 6),
             GridItem(.flexible(), spacing: 6),
@@ -130,66 +135,121 @@ struct MenuBarView: View {
         ]
 
         return LazyVGrid(columns: columns, spacing: 6) {
-            ForEach(AwakeDuration.allCases) { duration in
-                durationChip(duration)
+            ForEach(AwakeDuration.visiblePresets) { duration in
+                startButton(duration)
             }
         }
     }
 
-    private func durationChip(_ duration: AwakeDuration) -> some View {
-        let isSelected = store.selectedDuration == duration
+    private var customDurationRow: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                startButton(.indefinite)
+                customDurationField
+            }
 
-        return Button {
-            store.setSelectedDuration(duration)
+            if let customMinutes = parsedCustomMinutes {
+                Button {
+                    startCustomSession(minutes: customMinutes)
+                } label: {
+                    Text("Start")
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 34)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(Color.accentColor)
+                        )
+                        .foregroundStyle(Color.white)
+                }
+                .buttonStyle(.plain)
+                .disabled(store.isWorking)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private var customDurationField: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+
+            TextField("Custom", text: $customMinutesText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, weight: .semibold))
+                .monospacedDigit()
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Color.primary)
+                .padding(.horizontal, 10)
+                .disabled(store.isWorking)
+                .onSubmit {
+                    if let customMinutes = parsedCustomMinutes {
+                        startCustomSession(minutes: customMinutes)
+                    }
+                }
+                .onChange(of: customMinutesText) { newValue in
+                    updateCustomMinutesInput(newValue)
+                }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 34)
+        .help("Custom minutes")
+    }
+
+    private func startButton(_ duration: AwakeDuration) -> some View {
+        Button {
+            store.startAwakeSession(duration: duration)
         } label: {
-            Text(duration.chipLabel)
-                .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+            Text(duration.compactLabel)
+                .font(.system(size: 13, weight: .semibold))
+                .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
+                .frame(height: 34)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(isSelected ? Color.accentColor : Color.primary.opacity(0.06))
+                        .fill(Color.primary.opacity(0.06))
                 )
-                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                .foregroundStyle(Color.primary)
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .disabled(store.isWorking)
         .help(duration.label)
     }
 
-    private var customDurationEditor: some View {
-        HStack(spacing: 8) {
-            TextField(
-                "Minutes",
-                value: Binding(
-                    get: { store.customDurationMinutes },
-                    set: { store.setCustomDurationMinutes($0) }
-                ),
-                format: .number
-            )
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 64)
-
-            Stepper(
-                "",
-                value: Binding(
-                    get: { store.customDurationMinutes },
-                    set: { store.setCustomDurationMinutes($0) }
-                ),
-                in: store.customDurationBounds,
-                step: 5
-            )
-            .labelsHidden()
-            .fixedSize()
-
-            Spacer()
-
-            Text(store.customDurationLabel)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
+    private var parsedCustomMinutes: Int? {
+        let trimmedValue = customMinutesText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty,
+              let minutes = Int(trimmedValue) else {
+            return nil
         }
-        .padding(.top, 2)
+
+        return min(
+            max(minutes, store.customDurationBounds.lowerBound),
+            store.customDurationBounds.upperBound
+        )
+    }
+
+    private func updateCustomMinutesInput(_ value: String) {
+        let digitsOnly = value.filter(\.isWholeNumber)
+        if digitsOnly != value {
+            customMinutesText = digitsOnly
+            return
+        }
+
+        if let customMinutes = parsedCustomMinutes {
+            store.setSelectedDuration(.custom)
+            store.setCustomDurationMinutes(customMinutes)
+        }
+    }
+
+    private func startCustomSession(minutes: Int) {
+        store.setCustomDurationMinutes(minutes)
+        store.startAwakeSession(duration: .custom)
     }
 
     private var primaryButton: some View {
@@ -250,25 +310,6 @@ struct MenuBarView: View {
             return .secondary
         case .unknown:
             return .secondary
-        }
-    }
-}
-
-private extension AwakeDuration {
-    var chipLabel: String {
-        switch self {
-        case .oneHour:
-            return "1h"
-        case .threeHours:
-            return "3h"
-        case .sixHours:
-            return "6h"
-        case .twelveHours:
-            return "12h"
-        case .custom:
-            return "Custom"
-        case .indefinite:
-            return "∞"
         }
     }
 }

@@ -18,7 +18,7 @@ final class PowerSettingsStoreTests: XCTestCase {
 
         XCTAssertEqual(store.actionTitle, "Check Again")
         XCTAssertNil(store.menuBarTitle)
-        XCTAssertEqual(store.menuBarSystemImage, "moon.circle")
+        XCTAssertEqual(store.menuBarSystemImage, "moon")
         store.performPrimaryAction()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
@@ -152,6 +152,78 @@ final class PowerSettingsStoreTests: XCTestCase {
             XCTAssertNil(store.activeUntil)
             XCTAssertNil(store.menuBarTitle)
             XCTAssertEqual(defaults.string(forKey: "selectedDuration"), AwakeDuration.indefinite.rawValue)
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
+    func testThirtyMinuteDurationSchedulesShortValidationRestore() {
+        let expectation = expectation(description: "30 minute start completes")
+        var capturedRestore: TimedRestore?
+        var readCount = 0
+        let client = PowerSettingsClient(
+            readSnapshot: {
+                readCount += 1
+                return PowerSettingsSnapshot(sleepSetting: readCount == 1 ? .normal : .disabled, rawOutput: "")
+            },
+            setSleepDisabled: { _, timedRestore, _ in
+                capturedRestore = timedRestore
+            }
+        )
+        let defaults = makeDefaults()
+        let store = PowerSettingsStore(client: client, defaults: defaults)
+        store.setSelectedDuration(.thirtyMinutes)
+        store.refresh()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
+            XCTAssertEqual(store.actionTitle, "Keep Awake 30 minutes")
+            store.startAwakeSession()
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
+            XCTAssertEqual(capturedRestore?.seconds, 1_800)
+            XCTAssertEqual(defaults.string(forKey: "selectedDuration"), AwakeDuration.thirtyMinutes.rawValue)
+            XCTAssertTrue(
+                store.activeSessionValue?.range(of: #"^(30m 0s|29m 59s)$"#, options: .regularExpression) != nil,
+                store.activeSessionValue ?? ""
+            )
+            XCTAssertEqual(store.menuBarTitle, "30m")
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
+    func testExplicitDurationStartSchedulesAndPersistsSelection() {
+        let expectation = expectation(description: "2 hour start completes")
+        var capturedRestore: TimedRestore?
+        var readCount = 0
+        let client = PowerSettingsClient(
+            readSnapshot: {
+                readCount += 1
+                return PowerSettingsSnapshot(sleepSetting: readCount == 1 ? .normal : .disabled, rawOutput: "")
+            },
+            setSleepDisabled: { _, timedRestore, _ in
+                capturedRestore = timedRestore
+            }
+        )
+        let defaults = makeDefaults()
+        let store = PowerSettingsStore(client: client, defaults: defaults)
+        store.refresh()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
+            store.startAwakeSession(duration: .twoHours)
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
+            XCTAssertEqual(capturedRestore?.seconds, 7_200)
+            XCTAssertEqual(defaults.string(forKey: "selectedDuration"), AwakeDuration.twoHours.rawValue)
+            XCTAssertTrue(
+                store.activeSessionValue?.range(of: #"^(2h 0m 0s|1h 59m 59s)$"#, options: .regularExpression) != nil,
+                store.activeSessionValue ?? ""
+            )
+            XCTAssertEqual(store.menuBarTitle, "2h")
             expectation.fulfill()
         }
 
@@ -378,7 +450,7 @@ final class PowerSettingsStoreTests: XCTestCase {
         )
 
         XCTAssertEqual(store.snapshot.sleepSetting, .disabled)
-        XCTAssertEqual(store.menuBarTitle, "1h")
+        XCTAssertEqual(store.menuBarTitle, "1m")
 
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
             XCTAssertEqual(store.snapshot.sleepSetting, .normal)
@@ -445,8 +517,8 @@ final class PowerSettingsStoreTests: XCTestCase {
         store.refresh()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
-            XCTAssertEqual(store.menuBarTitle, "1h")
-            XCTAssertEqual(store.menuBarSystemImage, "timer.circle.fill")
+            XCTAssertEqual(store.menuBarTitle, "60m")
+            XCTAssertEqual(store.menuBarSystemImage, "timer")
             XCTAssertEqual(store.statusTitle, "Awake")
             XCTAssertEqual(store.statusDetail, "Codex and Claude Code can keep running.")
             XCTAssertTrue(
@@ -460,12 +532,9 @@ final class PowerSettingsStoreTests: XCTestCase {
         wait(for: [expectation], timeout: 1)
     }
 
-    func testRestoreSleepIsPermanentAndClearsTimedSession() {
+    func testManualRestoreUsesStopCommandWhenThereIsNoTimedSession() {
         let expectation = expectation(description: "restore completes")
         let defaults = makeDefaults()
-        defaults.set(Date().addingTimeInterval(1000).timeIntervalSince1970, forKey: "activeUntil")
-        defaults.set("old-token", forKey: "sessionToken")
-        defaults.set(Date().addingTimeInterval(-100).timeIntervalSince1970, forKey: "sessionStartedAt")
         var capturedDisabled: Bool?
         var capturedRestore: TimedRestore?
         var capturedToken: String?
@@ -488,9 +557,94 @@ final class PowerSettingsStoreTests: XCTestCase {
             XCTAssertNil(capturedRestore)
             XCTAssertEqual(capturedToken, "off")
             XCTAssertNil(store.activeUntil)
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
+    func testTimedRestoreStopRequestsCancellationBeforePrivilegedFallback() {
+        let expectation = expectation(description: "timed cancellation completes")
+        let defaults = makeDefaults()
+        defaults.set(Date().addingTimeInterval(1000).timeIntervalSince1970, forKey: "activeUntil")
+        defaults.set("old-token", forKey: "sessionToken")
+        var cancellationTokens: [String] = []
+        var privilegedStopCount = 0
+        var didRequestCancellation = false
+        let client = PowerSettingsClient(
+            readSnapshot: {
+                PowerSettingsSnapshot(
+                    sleepSetting: didRequestCancellation ? .normal : .disabled,
+                    rawOutput: didRequestCancellation ? "SleepDisabled 0" : "SleepDisabled 1"
+                )
+            },
+            setSleepDisabled: { _, _, _ in
+                privilegedStopCount += 1
+            },
+            requestTimedRestoreCancellation: { token in
+                cancellationTokens.append(token)
+                didRequestCancellation = true
+            }
+        )
+        let store = PowerSettingsStore(
+            client: client,
+            defaults: defaults,
+            timedCancelPollInterval: 0.001,
+            timedCancelTimeout: 0.05
+        )
+
+        store.restoreSleep()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(120)) {
+            XCTAssertEqual(cancellationTokens, ["old-token"])
+            XCTAssertEqual(privilegedStopCount, 0)
+            XCTAssertEqual(store.snapshot.sleepSetting, .normal)
+            XCTAssertNil(store.activeUntil)
             XCTAssertNil(defaults.object(forKey: "activeUntil"))
             XCTAssertNil(defaults.string(forKey: "sessionToken"))
-            XCTAssertNil(defaults.object(forKey: "sessionStartedAt"))
+            XCTAssertEqual(store.statusMessage, "Stopped. Normal sleep is on.")
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
+    func testTimedRestoreStopFallsBackToPrivilegedStopWhenCancellationDoesNotRestoreSleep() {
+        let expectation = expectation(description: "timed cancellation fallback completes")
+        let defaults = makeDefaults()
+        defaults.set(Date().addingTimeInterval(1000).timeIntervalSince1970, forKey: "activeUntil")
+        defaults.set("old-token", forKey: "sessionToken")
+        var cancellationTokens: [String] = []
+        var privilegedStopCount = 0
+        let client = PowerSettingsClient(
+            readSnapshot: {
+                PowerSettingsSnapshot(
+                    sleepSetting: privilegedStopCount > 0 ? .normal : .disabled,
+                    rawOutput: privilegedStopCount > 0 ? "SleepDisabled 0" : "SleepDisabled 1"
+                )
+            },
+            setSleepDisabled: { disabled, _, _ in
+                XCTAssertFalse(disabled)
+                privilegedStopCount += 1
+            },
+            requestTimedRestoreCancellation: { token in
+                cancellationTokens.append(token)
+            }
+        )
+        let store = PowerSettingsStore(
+            client: client,
+            defaults: defaults,
+            timedCancelPollInterval: 0.001,
+            timedCancelTimeout: 0.01
+        )
+
+        store.restoreSleep()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(140)) {
+            XCTAssertEqual(cancellationTokens, ["old-token"])
+            XCTAssertEqual(privilegedStopCount, 1)
+            XCTAssertEqual(store.snapshot.sleepSetting, .normal)
+            XCTAssertNil(store.activeUntil)
             expectation.fulfill()
         }
 
@@ -510,6 +664,7 @@ private extension PowerSettingsClient {
         readSnapshot: {
             PowerSettingsSnapshot(sleepSetting: .normal, rawOutput: "SleepDisabled 0")
         },
-        setSleepDisabled: { _, _, _ in }
+        setSleepDisabled: { _, _, _ in },
+        requestTimedRestoreCancellation: { _ in }
     )
 }

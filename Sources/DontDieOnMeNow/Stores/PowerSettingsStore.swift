@@ -11,6 +11,8 @@ final class PowerSettingsStore: ObservableObject {
 
     private let client: PowerSettingsClient
     private let defaults: UserDefaults
+    private let timedCancelPollInterval: TimeInterval
+    private let timedCancelTimeout: TimeInterval
     private var sessionToken: String?
     private var tickTimer: Timer?
     private var didRequestExpiredSessionRefresh = false
@@ -31,10 +33,14 @@ final class PowerSettingsStore: ObservableObject {
         defaults: UserDefaults = .standard,
         automaticallyTicks: Bool = false,
         tickInterval: TimeInterval = 1,
-        refreshOnStart: Bool = false
+        refreshOnStart: Bool = false,
+        timedCancelPollInterval: TimeInterval = 0.5,
+        timedCancelTimeout: TimeInterval = 8
     ) {
         self.client = client
         self.defaults = defaults
+        self.timedCancelPollInterval = timedCancelPollInterval
+        self.timedCancelTimeout = timedCancelTimeout
         selectedDuration = AwakeDuration(storedValue: defaults.string(forKey: DefaultsKey.selectedDuration))
         customDurationMinutes = Self.clampCustomDurationMinutes(
             defaults.integer(forKey: DefaultsKey.customDurationMinutes)
@@ -81,22 +87,22 @@ final class PowerSettingsStore: ObservableObject {
 
     var menuBarSystemImage: String {
         if isWorking {
-            return "arrow.triangle.2.circlepath.circle.fill"
+            return "arrow.clockwise"
         }
 
         switch snapshot.sleepSetting {
         case .disabled:
             if activeUntil == nil {
-                return "infinity.circle.fill"
+                return "infinity"
             }
             if let remaining = remainingTime, remaining > 0 {
-                return "timer.circle.fill"
+                return "timer"
             }
             return "exclamationmark.triangle.fill"
         case .normal:
-            return "moon.circle.fill"
+            return "moon.fill"
         case .unknown:
-            return "moon.circle"
+            return "moon"
         }
     }
 
@@ -245,8 +251,31 @@ final class PowerSettingsStore: ObservableObject {
         }
     }
 
+    func startAwakeSession(duration: AwakeDuration) {
+        setSelectedDuration(duration)
+        startAwakeSession()
+    }
+
     func restoreSleep() {
+        let timedSessionToken = activeUntil == nil ? nil : sessionToken
+        let timedCancelPollInterval = timedCancelPollInterval
+        let timedCancelTimeout = timedCancelTimeout
+
         runWork(successMessage: "Stopped. Normal sleep is on.") { [client] in
+            if let timedSessionToken,
+               let snapshot = Self.restoreTimedSessionWithoutPrivilegeIfPossible(
+                token: timedSessionToken,
+                client: client,
+                timeout: timedCancelTimeout,
+                pollInterval: timedCancelPollInterval
+               ) {
+                return StoreUpdate(
+                    snapshot: snapshot,
+                    sessionMutation: .clear,
+                    statusMessage: "Stopped. Normal sleep is on."
+                )
+            }
+
             try client.setSleepDisabled(false, nil, "off")
             let snapshot = try client.readSnapshot()
             guard !snapshot.sleepSetting.isDisabled else {
@@ -296,6 +325,38 @@ final class PowerSettingsStore: ObservableObject {
                 return true
             }
         }
+    }
+
+    private static func restoreTimedSessionWithoutPrivilegeIfPossible(
+        token: String,
+        client: PowerSettingsClient,
+        timeout: TimeInterval,
+        pollInterval: TimeInterval
+    ) -> PowerSettingsSnapshot? {
+        do {
+            try client.requestTimedRestoreCancellation(token)
+        } catch {
+            return nil
+        }
+
+        let deadline = Date().addingTimeInterval(max(0, timeout))
+
+        repeat {
+            do {
+                let snapshot = try client.readSnapshot()
+                if !snapshot.sleepSetting.isDisabled {
+                    return snapshot
+                }
+            } catch {
+                return nil
+            }
+
+            if Date() >= deadline {
+                return nil
+            }
+
+            Thread.sleep(forTimeInterval: max(0.001, pollInterval))
+        } while true
     }
 
     private func startAutomaticTicks(every interval: TimeInterval) {
@@ -400,6 +461,11 @@ final class PowerSettingsStore: ObservableObject {
     }
 
     private static func formatMenuBarRemaining(_ remaining: TimeInterval) -> String {
+        if remaining < 3600 {
+            let minutes = max(1, Int(ceil(remaining / 60)))
+            return "\(minutes)m"
+        }
+
         let hours = max(1, Int(ceil(remaining / 3600)))
         return "\(hours)h"
     }

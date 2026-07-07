@@ -53,7 +53,10 @@ enum PrivilegedPowerCommand {
                 commands.append("/bin/chmod 600 \(deadlineTempFile.shellSingleQuoted)")
                 commands.append("/bin/mv -f \(deadlineTempFile.shellSingleQuoted) \(deadlineFile.shellSingleQuoted)")
                 commands.append(contentsOf: sessionSetup)
-                commands.append(writeRestoreScriptCommand(token: timedRestore.token))
+                commands.append(writeRestoreScriptCommand(
+                    token: timedRestore.token,
+                    cancelFilePath: timedRestore.cancelFilePath
+                ))
                 commands.append("/bin/chmod 700 \(restoreScript.shellSingleQuoted)")
                 commands.append(writeRestorePlistCommand())
                 commands.append("/usr/sbin/chown root:wheel \(restorePlist.shellSingleQuoted) \(restoreScript.shellSingleQuoted)")
@@ -80,7 +83,7 @@ enum PrivilegedPowerCommand {
         return commands.joined(separator: "; ")
     }
 
-    private static func writeRestoreScriptCommand(token: String) -> String {
+    private static func writeRestoreScriptCommand(token: String, cancelFilePath: String?) -> String {
         let script = [
             "#!/bin/sh",
             "set -eu",
@@ -91,11 +94,19 @@ enum PrivilegedPowerCommand {
             "RESTORE_PLIST=\(restorePlist.shellSingleQuoted)",
             "RESTORE_SCRIPT=\(restoreScript.shellSingleQuoted)",
             "TOKEN=\(token.shellSingleQuoted)",
+            "CANCEL_FILE=\((cancelFilePath ?? "").shellSingleQuoted)",
+            "sleep_interval=2",
             "deadline=\"$(/bin/cat \"$DEADLINE_FILE\" 2>/dev/null || true)\"",
-            "case \"$deadline\" in ''|*[!0-9]*) /usr/bin/pmset -a disablesleep 0; /bin/rm -f \"$SESSION_FILE\" \"$DEADLINE_FILE\" \"$DEADLINE_TEMP_FILE\" \"$RESTORE_PLIST\" \"$RESTORE_SCRIPT\"; /bin/launchctl bootout \"system/$RESTORE_LABEL\" >/dev/null 2>&1 || true; exit 0 ;; esac",
-            "now=\"$(/bin/date +%s)\"",
-            "if [ \"$now\" -lt \"$deadline\" ]; then /bin/sleep \"$((deadline - now))\"; fi",
-            "if [ \"$(/bin/cat \"$SESSION_FILE\" 2>/dev/null || true)\" = \"$TOKEN\" ]; then /usr/bin/pmset -a disablesleep 0; /bin/rm -f \"$SESSION_FILE\" \"$DEADLINE_FILE\" \"$DEADLINE_TEMP_FILE\"; fi",
+            "case \"$deadline\" in ''|*[!0-9]*) echo \"DontDieOnMeNow restore: invalid deadline; restoring normal sleep.\"; /usr/bin/pmset -a disablesleep 0; echo \"DontDieOnMeNow restore: normal sleep restored after invalid deadline.\"; if [ -n \"$CANCEL_FILE\" ]; then /bin/rm -f \"$CANCEL_FILE\"; fi; /bin/rm -f \"$SESSION_FILE\" \"$DEADLINE_FILE\" \"$DEADLINE_TEMP_FILE\" \"$RESTORE_PLIST\" \"$RESTORE_SCRIPT\"; /bin/launchctl bootout \"system/$RESTORE_LABEL\" >/dev/null 2>&1 || true; exit 0 ;; esac",
+            "restore_reason=deadline",
+            "while :; do",
+            "  if [ -n \"$CANCEL_FILE\" ] && [ \"$(/bin/cat \"$CANCEL_FILE\" 2>/dev/null || true)\" = \"$TOKEN\" ]; then restore_reason=stop; break; fi",
+            "  now=\"$(/bin/date +%s)\"",
+            "  if [ \"$now\" -ge \"$deadline\" ]; then break; fi",
+            "  remaining=$((deadline - now))",
+            "  if [ \"$remaining\" -gt \"$sleep_interval\" ]; then /bin/sleep \"$sleep_interval\"; elif [ \"$remaining\" -gt 0 ]; then /bin/sleep \"$remaining\"; fi",
+            "done",
+            "if [ \"$(/bin/cat \"$SESSION_FILE\" 2>/dev/null || true)\" = \"$TOKEN\" ]; then if [ \"$restore_reason\" = stop ]; then echo \"DontDieOnMeNow restore: stop requested; restoring normal sleep.\"; else echo \"DontDieOnMeNow restore: deadline reached; restoring normal sleep.\"; fi; /usr/bin/pmset -a disablesleep 0; echo \"DontDieOnMeNow restore: normal sleep restored.\"; if [ -n \"$CANCEL_FILE\" ]; then /bin/rm -f \"$CANCEL_FILE\"; fi; /bin/rm -f \"$SESSION_FILE\" \"$DEADLINE_FILE\" \"$DEADLINE_TEMP_FILE\"; else echo \"DontDieOnMeNow restore: session token changed; leaving sleep setting unchanged.\"; fi",
             "/bin/rm -f \"$RESTORE_PLIST\" \"$RESTORE_SCRIPT\"",
             "/bin/launchctl bootout \"system/$RESTORE_LABEL\" >/dev/null 2>&1 || true",
         ]
