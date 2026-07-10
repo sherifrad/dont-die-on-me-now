@@ -63,7 +63,6 @@ enum PrivilegedPowerCommand {
                 commands.append("/bin/chmod 644 \(restorePlist.shellSingleQuoted)")
                 commands.append("/usr/bin/plutil -lint \(restorePlist.shellSingleQuoted) >/dev/null")
                 commands.append("/bin/launchctl bootstrap system \(restorePlist.shellSingleQuoted)")
-                commands.append("/bin/launchctl kickstart -k \(("system/" + restoreLabel).shellSingleQuoted) >/dev/null 2>&1 || true")
             } else {
                 commands.append(contentsOf: clearRestoreJob)
                 commands.append("/bin/rm -f \(deadlineFile.shellSingleQuoted) \(deadlineTempFile.shellSingleQuoted)")
@@ -128,6 +127,11 @@ enum PrivilegedPowerCommand {
             "  </array>",
             "  <key>RunAtLoad</key>",
             "  <true/>",
+            "  <key>KeepAlive</key>",
+            "  <dict>",
+            "    <key>SuccessfulExit</key>",
+            "    <false/>",
+            "  </dict>",
             "  <key>StandardOutPath</key>",
             "  <string>/var/log/dont-die-on-me-now-restore.log</string>",
             "  <key>StandardErrorPath</key>",

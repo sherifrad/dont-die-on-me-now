@@ -6,6 +6,8 @@ APP_NAME="DontDieOnMeNow"
 DISPLAY_NAME="Don't Die On Me Now"
 BUNDLE_ID="com.josh.DontDieOnMeNow"
 MIN_SYSTEM_VERSION="13.0"
+BUILD_CONFIGURATION="release"
+BUILD_ARGUMENTS=(-c "$BUILD_CONFIGURATION" --arch arm64 --arch x86_64)
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -16,15 +18,43 @@ APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 ICON_PATH="$DIST_DIR/DontDieOnMeNow.icns"
+VERSION_FILE="$ROOT_DIR/VERSION"
+
+if [ ! -r "$VERSION_FILE" ]; then
+  echo "Missing VERSION file: $VERSION_FILE" >&2
+  exit 1
+fi
+
+APP_VERSION="$(/usr/bin/tr -d '\r\n[:space:]' < "$VERSION_FILE")"
+if [ -z "$APP_VERSION" ]; then
+  echo "VERSION must not be empty." >&2
+  exit 1
+fi
+if ! [[ "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "VERSION must use semantic version format, for example 0.1.0." >&2
+  exit 1
+fi
 
 cd "$ROOT_DIR"
-swift build
-BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
+swift build "${BUILD_ARGUMENTS[@]}"
+BUILD_BINARY="$(swift build "${BUILD_ARGUMENTS[@]}" --show-bin-path)/$APP_NAME"
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
+/usr/bin/lipo "$APP_BINARY" -verify_arch arm64 x86_64
+
+mkdir -p "$APP_RESOURCES/script"
+cp "$ROOT_DIR/uninstall.sh" "$APP_RESOURCES/uninstall.sh"
+for script_name in \
+  uninstall_app.sh \
+  uninstall_failsafe_daemon.sh \
+  uninstall_login_launcher.sh \
+  uninstall_privileged_helper.sh; do
+  cp "$ROOT_DIR/script/$script_name" "$APP_RESOURCES/script/$script_name"
+done
+chmod +x "$APP_RESOURCES/uninstall.sh" "$APP_RESOURCES/script"/*.sh
 
 swift "$ROOT_DIR/script/generate_app_icon.swift" "$ICON_PATH"
 cp "$ICON_PATH" "$APP_RESOURCES/DontDieOnMeNow.icns"
@@ -47,7 +77,7 @@ cat >"$INFO_PLIST" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>LSMinimumSystemVersion</key>

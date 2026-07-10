@@ -2,6 +2,7 @@
 set -euo pipefail
 
 LABEL="com.josh.DontDieOnMeNow.helper"
+HELPER_VERSION="7"
 ROOT_DIR="/Library/Application Support/DontDieOnMeNow"
 CONFIG_FILE="$ROOT_DIR/helper.conf"
 RESTORE_LABEL="com.josh.DontDieOnMeNow.restore"
@@ -52,6 +53,12 @@ read_request_value() {
 
 is_safe_identifier() {
   local value="$1"
+  local maximum_length="$2"
+
+  if [ "${#value}" -gt "$maximum_length" ]; then
+    return 1
+  fi
+
   case "$value" in
     ""|*[!A-Za-z0-9._-]*)
       return 1
@@ -60,6 +67,35 @@ is_safe_identifier() {
       return 0
       ;;
   esac
+}
+
+request_directory_is_safe() {
+  local owner
+
+  if [ ! -d "$REQUEST_DIR" ] || [ -L "$REQUEST_DIR" ]; then
+    return 1
+  fi
+
+  owner="$(/usr/bin/stat -f '%u' "$REQUEST_DIR" 2>/dev/null || true)"
+  [ "$owner" = "$USER_UID" ]
+}
+
+request_file_is_safe() {
+  local owner
+  local size
+  local request_file="$REQUEST_DIR/request"
+
+  if [ ! -f "$request_file" ] || [ -L "$request_file" ]; then
+    return 1
+  fi
+
+  owner="$(/usr/bin/stat -f '%u' "$request_file" 2>/dev/null || true)"
+  size="$(/usr/bin/stat -f '%z' "$request_file" 2>/dev/null || true)"
+  case "$size" in
+    ""|*[!0-9]*) return 1 ;;
+  esac
+
+  [ "$owner" = "$USER_UID" ] && [ "$size" -le 4096 ]
 }
 
 is_safe_path() {
@@ -95,7 +131,12 @@ write_response() {
   local request_id="$1"
   local status="$2"
   local message="$3"
-  local response_tmp="$REQUEST_DIR/response.tmp.$$"
+  local response_tmp="$ROOT_DIR/response.tmp.$$"
+
+  if ! request_directory_is_safe; then
+    echo "DontDieOnMeNow helper: unsafe request directory; response not written." >&2
+    return 1
+  fi
 
   {
     echo "request_id=$request_id"
@@ -103,8 +144,8 @@ write_response() {
     echo "message=$message"
     echo "sleep_disabled=$(current_sleep_disabled)"
   } > "$response_tmp"
-  /bin/chmod 644 "$response_tmp"
-  /usr/sbin/chown "$USER_UID:$USER_GID" "$response_tmp" >/dev/null 2>&1 || true
+  /bin/chmod 600 "$response_tmp"
+  /usr/sbin/chown "$USER_UID:$USER_GID" "$response_tmp"
   /bin/mv -f "$response_tmp" "$REQUEST_DIR/response"
 }
 
@@ -127,6 +168,11 @@ write_restore_plist() {
   </array>
   <key>RunAtLoad</key>
   <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
   <key>StandardOutPath</key>
   <string>/var/log/dont-die-on-me-now-restore.log</string>
   <key>StandardErrorPath</key>
@@ -196,7 +242,6 @@ start_awake() {
     /bin/chmod 644 "$RESTORE_PLIST"
     /usr/bin/plutil -lint "$RESTORE_PLIST" >/dev/null
     /bin/launchctl bootstrap system "$RESTORE_PLIST"
-    /bin/launchctl kickstart -k "system/$RESTORE_LABEL" >/dev/null 2>&1 || true
   else
     /bin/rm -f "$DEADLINE_FILE" "$DEADLINE_TEMP_FILE"
   fi
@@ -215,6 +260,36 @@ stop_awake() {
   /bin/rm -f "$SESSION_FILE" "$DEADLINE_FILE" "$DEADLINE_TEMP_FILE"
 }
 
+restore_expired_deadline() {
+  local deadline
+  local now
+
+  if [ ! -f "$DEADLINE_FILE" ]; then
+    return 0
+  fi
+
+  deadline="$(/bin/cat "$DEADLINE_FILE" 2>/dev/null || true)"
+  case "$deadline" in
+    ""|*[!0-9]*)
+      echo "DontDieOnMeNow helper: invalid deadline; restoring normal sleep."
+      /usr/bin/pmset -a disablesleep 0
+      clear_restore_job
+      /bin/rm -f "$SESSION_FILE" "$DEADLINE_FILE" "$DEADLINE_TEMP_FILE"
+      return 0
+      ;;
+  esac
+
+  now="$(/bin/date +%s)"
+  if [ "$now" -lt "$deadline" ]; then
+    return 0
+  fi
+
+  echo "DontDieOnMeNow helper: deadline reached; restoring normal sleep."
+  /usr/bin/pmset -a disablesleep 0
+  clear_restore_job
+  /bin/rm -f "$SESSION_FILE" "$DEADLINE_FILE" "$DEADLINE_TEMP_FILE"
+}
+
 process_request() {
   local request_id
   local last_request_id
@@ -223,7 +298,18 @@ process_request() {
   local token
   local cancel_file
 
-  if [ ! -r "$REQUEST_DIR/request" ]; then
+  if [ ! -e "$REQUEST_DIR/request" ]; then
+    return 0
+  fi
+
+  if ! request_directory_is_safe; then
+    echo "DontDieOnMeNow helper: rejected an unsafe request directory." >&2
+    return 0
+  fi
+
+  if ! request_file_is_safe; then
+    echo "DontDieOnMeNow helper: rejected an unsafe request file." >&2
+    /bin/rm -f "$REQUEST_DIR/request" 2>/dev/null || true
     return 0
   fi
 
@@ -238,13 +324,13 @@ process_request() {
     return 0
   fi
 
-  if ! is_safe_identifier "$request_id"; then
+  if ! is_safe_identifier "$request_id" 80; then
     write_response "invalid" "error" "Invalid request id."
     /bin/rm -f "$REQUEST_DIR/request"
     return 0
   fi
 
-  if ! is_safe_identifier "$token"; then
+  if ! is_safe_identifier "$token" 128; then
     write_response "$request_id" "error" "Invalid token."
     echo "$request_id" > "$LAST_REQUEST_FILE"
     return 0
@@ -258,7 +344,7 @@ process_request() {
       ;;
   esac
 
-  if [ "$seconds" -gt 86400 ]; then
+  if [ "${#seconds}" -gt 5 ] || [ "$seconds" -gt 86400 ]; then
     write_response "$request_id" "error" "Duration must be 24 hours or less."
     echo "$request_id" > "$LAST_REQUEST_FILE"
     return 0
@@ -294,12 +380,19 @@ process_request() {
 
 main() {
   load_config
-  /bin/mkdir -p "$REQUEST_DIR"
-  /usr/sbin/chown "$USER_UID:$USER_GID" "$REQUEST_DIR" >/dev/null 2>&1 || true
-  /bin/chmod 700 "$REQUEST_DIR"
+
+  case "$USER_UID:$USER_GID" in
+    *[!0-9:]*|:*|*:) echo "Invalid helper user ids." >&2; exit 1 ;;
+  esac
+  if [ "$REQUEST_DIR" != "$USER_SUPPORT_DIR/helper" ] \
+    || ! request_directory_is_safe; then
+    echo "Unsafe helper request directory: $REQUEST_DIR" >&2
+    exit 1
+  fi
 
   while true; do
     process_request >> "$HELPER_LOG" 2>&1 || true
+    restore_expired_deadline >> "$HELPER_LOG" 2>&1 || true
     /bin/sleep 0.5
   done
 }
@@ -308,6 +401,8 @@ case "${1:-}" in
   --once)
     load_config
     process_request
+    restore_expired_deadline
+    /bin/sleep 1
     ;;
   ""|--watch)
     main

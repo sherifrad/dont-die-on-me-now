@@ -1,7 +1,26 @@
+import AppKit
 import XCTest
 @testable import DontDieOnMeNow
 
 final class PowerSettingsStoreTests: XCTestCase {
+    func testCoffeeCupMenuBarImagesAreTemplateAssets() {
+        for steaming in [false, true] {
+            let image = CoffeeCupMenuBarImage.image(steaming: steaming)
+            XCTAssertEqual(image.size, NSSize(width: 20, height: 20))
+            XCTAssertTrue(image.isTemplate)
+            XCTAssertNotNil(image.accessibilityDescription)
+        }
+    }
+
+    func testCoffeeCupUsesRaisedDefaultArtworkPosition() throws {
+        XCTAssertEqual(CoffeeCupMenuBarImage.artworkVerticalOffset, 2)
+        let renderedBounds = try alphaBounds(
+            of: CoffeeCupMenuBarImage.image(steaming: false)
+        )
+
+        XCTAssertGreaterThanOrEqual(renderedBounds.minY, 2)
+    }
+
     func testUnknownPrimaryActionRefreshesInsteadOfToggling() {
         let expectation = expectation(description: "refresh completes")
         var setCallCount = 0
@@ -18,7 +37,8 @@ final class PowerSettingsStoreTests: XCTestCase {
 
         XCTAssertEqual(store.actionTitle, "Check Again")
         XCTAssertNil(store.menuBarTitle)
-        XCTAssertEqual(store.menuBarSystemImage, "moon")
+        XCTAssertEqual(store.menuBarIcon, .coffee(steaming: false))
+        XCTAssertEqual(store.menuBarAccessibilityLabel, "Checking sleep settings")
         store.performPrimaryAction()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
@@ -118,6 +138,8 @@ final class PowerSettingsStoreTests: XCTestCase {
                 store.activeSessionValue ?? ""
             )
             XCTAssertEqual(store.menuBarTitle, "6h")
+            XCTAssertEqual(store.menuBarIcon, .coffee(steaming: true))
+            XCTAssertTrue(store.menuBarAccessibilityLabel.hasPrefix("Keeping awake, "))
             XCTAssertEqual(store.activeSessionCaption, "left")
             expectation.fulfill()
         }
@@ -151,6 +173,8 @@ final class PowerSettingsStoreTests: XCTestCase {
             XCTAssertNil(capturedRestore)
             XCTAssertNil(store.activeUntil)
             XCTAssertNil(store.menuBarTitle)
+            XCTAssertEqual(store.menuBarIcon, .coffee(steaming: true))
+            XCTAssertEqual(store.menuBarAccessibilityLabel, "Keeping awake until stopped")
             XCTAssertEqual(defaults.string(forKey: "selectedDuration"), AwakeDuration.indefinite.rawValue)
             expectation.fulfill()
         }
@@ -375,7 +399,11 @@ final class PowerSettingsStoreTests: XCTestCase {
             XCTAssertEqual(store.statusTitle, "Needs Attention")
             XCTAssertEqual(store.statusDetail, "Timer ended, but sleep is still disabled.")
             XCTAssertNil(store.menuBarTitle)
-            XCTAssertEqual(store.menuBarSystemImage, "exclamationmark.triangle.fill")
+            XCTAssertEqual(store.menuBarIcon, .system(name: "exclamationmark.triangle.fill"))
+            XCTAssertEqual(
+                store.menuBarAccessibilityLabel,
+                "Needs attention: timer ended but sleep is still disabled"
+            )
             XCTAssertEqual(store.activeSessionValue, "Still Awake")
             XCTAssertEqual(store.activeSessionCaption, "Timer ended. Stop to restore normal sleep.")
             XCTAssertNotNil(store.activeUntil)
@@ -406,7 +434,11 @@ final class PowerSettingsStoreTests: XCTestCase {
             },
             setSleepDisabled: { _, _, _ in }
         )
-        let store = PowerSettingsStore(client: client, defaults: defaults)
+        let store = PowerSettingsStore(
+            client: client,
+            defaults: defaults,
+            expiredSessionRefreshInterval: 0.05
+        )
 
         store.tick()
 
@@ -498,6 +530,39 @@ final class PowerSettingsStoreTests: XCTestCase {
         wait(for: [expectation], timeout: 1)
     }
 
+    func testExpiredTimedSessionRechecksUntilNormalSleepReturns() {
+        let expectation = expectation(description: "expired session eventually clears")
+        let defaults = makeDefaults()
+        defaults.set(Date().addingTimeInterval(-100).timeIntervalSince1970, forKey: "activeUntil")
+        defaults.set("old-token", forKey: "sessionToken")
+        var readCount = 0
+        let client = PowerSettingsClient(
+            readSnapshot: {
+                readCount += 1
+                let setting: SleepSetting = readCount == 1 ? .disabled : .normal
+                return PowerSettingsSnapshot(sleepSetting: setting, rawOutput: "")
+            },
+            setSleepDisabled: { _, _, _ in }
+        )
+        let store = PowerSettingsStore(
+            client: client,
+            defaults: defaults,
+            automaticallyTicks: true,
+            tickInterval: 0.02,
+            expiredSessionRefreshInterval: 0.05
+        )
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(220)) {
+            XCTAssertGreaterThanOrEqual(readCount, 2)
+            XCTAssertEqual(store.snapshot.sleepSetting, .normal)
+            XCTAssertNil(store.activeUntil)
+            XCTAssertNil(store.menuBarTitle)
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
     func testRestartedMacKeepsTimedSessionCountdown() {
         let expectation = expectation(description: "refresh completes")
         let defaults = makeDefaults()
@@ -518,7 +583,7 @@ final class PowerSettingsStoreTests: XCTestCase {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
             XCTAssertEqual(store.menuBarTitle, "60m")
-            XCTAssertEqual(store.menuBarSystemImage, "timer")
+            XCTAssertEqual(store.menuBarIcon, .coffee(steaming: true))
             XCTAssertEqual(store.statusTitle, "Awake")
             XCTAssertEqual(store.statusDetail, "Codex and Claude Code can keep running.")
             XCTAssertTrue(
@@ -649,6 +714,38 @@ final class PowerSettingsStoreTests: XCTestCase {
         }
 
         wait(for: [expectation], timeout: 1)
+    }
+
+    private func alphaBounds(of image: NSImage) throws -> CGRect {
+        let data = try XCTUnwrap(image.tiffRepresentation)
+        let representation = try XCTUnwrap(NSBitmapImageRep(data: data))
+        var minimumX = representation.pixelsWide
+        var minimumY = representation.pixelsHigh
+        var maximumX = -1
+        var maximumY = -1
+
+        for y in 0..<representation.pixelsHigh {
+            for x in 0..<representation.pixelsWide {
+                guard let color = representation.colorAt(x: x, y: y),
+                      color.alphaComponent > 0.05 else {
+                    continue
+                }
+
+                minimumX = min(minimumX, x)
+                minimumY = min(minimumY, y)
+                maximumX = max(maximumX, x)
+                maximumY = max(maximumY, y)
+            }
+        }
+
+        XCTAssertGreaterThanOrEqual(maximumX, minimumX)
+        XCTAssertGreaterThanOrEqual(maximumY, minimumY)
+        return CGRect(
+            x: minimumX,
+            y: minimumY,
+            width: maximumX - minimumX + 1,
+            height: maximumY - minimumY + 1
+        )
     }
 
     private func makeDefaults() -> UserDefaults {

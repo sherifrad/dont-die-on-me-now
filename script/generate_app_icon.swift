@@ -44,49 +44,78 @@ func pngData(size: Int) throws -> Data {
     NSColor.clear.setFill()
     rect.fill()
 
-    let inset = CGFloat(size) * 0.055
+    let iconSize = CGFloat(size)
+    let inset = iconSize * 0.055
     let background = NSBezierPath(
         roundedRect: rect.insetBy(dx: inset, dy: inset),
-        xRadius: CGFloat(size) * 0.22,
-        yRadius: CGFloat(size) * 0.22
+        xRadius: iconSize * 0.22,
+        yRadius: iconSize * 0.22
     )
     NSGradient(colors: [
-        NSColor(red: 0.08, green: 0.10, blue: 0.15, alpha: 1),
-        NSColor(red: 0.13, green: 0.36, blue: 0.30, alpha: 1),
-        NSColor(red: 0.95, green: 0.60, blue: 0.20, alpha: 1),
-    ])?.draw(in: background, angle: -35)
+        NSColor(red: 0.13, green: 0.11, blue: 0.09, alpha: 1),
+        NSColor(red: 0.06, green: 0.055, blue: 0.05, alpha: 1),
+    ])?.draw(in: background, angle: -90)
 
-    let moonRect = CGRect(
-        x: CGFloat(size) * 0.20,
-        y: CGFloat(size) * 0.26,
-        width: CGFloat(size) * 0.36,
-        height: CGFloat(size) * 0.48
+    let cream = NSColor(red: 1.0, green: 0.973, blue: 0.91, alpha: 1)
+    let amber = NSColor(red: 0.96, green: 0.58, blue: 0.19, alpha: 1)
+    let cupFill = NSColor(red: 0.075, green: 0.067, blue: 0.058, alpha: 1)
+    let cupStrokeWidth = max(1.5, iconSize * 0.062)
+
+    let handle = NSBezierPath()
+    handle.lineWidth = cupStrokeWidth
+    handle.lineCapStyle = .round
+    handle.move(to: CGPoint(x: iconSize * 0.64, y: iconSize * 0.53))
+    handle.curve(
+        to: CGPoint(x: iconSize * 0.64, y: iconSize * 0.40),
+        controlPoint1: CGPoint(x: iconSize * 0.87, y: iconSize * 0.55),
+        controlPoint2: CGPoint(x: iconSize * 0.87, y: iconSize * 0.38)
     )
-    NSColor(red: 0.98, green: 0.96, blue: 0.82, alpha: 1).setFill()
-    NSBezierPath(ovalIn: moonRect).fill()
-    NSColor(red: 0.13, green: 0.36, blue: 0.30, alpha: 1).setFill()
-    NSBezierPath(ovalIn: moonRect.offsetBy(dx: CGFloat(size) * 0.13, dy: CGFloat(size) * 0.06)).fill()
+    cream.setStroke()
+    handle.stroke()
 
-    let center = CGPoint(x: CGFloat(size) * 0.67, y: CGFloat(size) * 0.50)
-    let ring = NSBezierPath()
-    ring.lineWidth = max(2, CGFloat(size) * 0.058)
-    ring.lineCapStyle = .round
-    ring.appendArc(
-        withCenter: center,
-        radius: CGFloat(size) * 0.15,
-        startAngle: 42,
-        endAngle: 318,
-        clockwise: false
+    let cup = NSBezierPath()
+    cup.lineWidth = cupStrokeWidth
+    cup.lineCapStyle = .round
+    cup.lineJoinStyle = .round
+    cup.move(to: CGPoint(x: iconSize * 0.25, y: iconSize * 0.58))
+    cup.line(to: CGPoint(x: iconSize * 0.68, y: iconSize * 0.58))
+    cup.line(to: CGPoint(x: iconSize * 0.68, y: iconSize * 0.42))
+    cup.curve(
+        to: CGPoint(x: iconSize * 0.465, y: iconSize * 0.25),
+        controlPoint1: CGPoint(x: iconSize * 0.68, y: iconSize * 0.31),
+        controlPoint2: CGPoint(x: iconSize * 0.58, y: iconSize * 0.25)
     )
-    NSColor.white.withAlphaComponent(0.93).setStroke()
-    ring.stroke()
+    cup.curve(
+        to: CGPoint(x: iconSize * 0.25, y: iconSize * 0.42),
+        controlPoint1: CGPoint(x: iconSize * 0.35, y: iconSize * 0.25),
+        controlPoint2: CGPoint(x: iconSize * 0.25, y: iconSize * 0.31)
+    )
+    cup.close()
+    cupFill.setFill()
+    cup.fill()
+    cream.setStroke()
+    cup.stroke()
 
-    let stem = NSBezierPath()
-    stem.lineWidth = max(2, CGFloat(size) * 0.058)
-    stem.lineCapStyle = .round
-    stem.move(to: CGPoint(x: center.x, y: CGFloat(size) * 0.72))
-    stem.line(to: CGPoint(x: center.x, y: CGFloat(size) * 0.53))
-    stem.stroke()
+    let saucer = NSBezierPath()
+    saucer.lineWidth = max(1.5, iconSize * 0.052)
+    saucer.lineCapStyle = .round
+    saucer.move(to: CGPoint(x: iconSize * 0.22, y: iconSize * 0.18))
+    saucer.line(to: CGPoint(x: iconSize * 0.73, y: iconSize * 0.18))
+    saucer.stroke()
+
+    amber.setStroke()
+    for steamX in [0.37, 0.52] {
+        let steam = NSBezierPath()
+        steam.lineWidth = max(1.3, iconSize * 0.045)
+        steam.lineCapStyle = .round
+        steam.move(to: CGPoint(x: iconSize * steamX, y: iconSize * 0.66))
+        steam.curve(
+            to: CGPoint(x: iconSize * steamX, y: iconSize * 0.86),
+            controlPoint1: CGPoint(x: iconSize * (steamX - 0.085), y: iconSize * 0.73),
+            controlPoint2: CGPoint(x: iconSize * (steamX + 0.085), y: iconSize * 0.79)
+        )
+        steam.stroke()
+    }
 
     NSGraphicsContext.restoreGraphicsState()
 
@@ -110,4 +139,3 @@ process.waitUntilExit()
 guard process.terminationStatus == 0 else {
     throw NSError(domain: "Icon", code: Int(process.terminationStatus))
 }
-

@@ -47,6 +47,7 @@ final class PowerSettingsClientTests: XCTestCase {
         XCTAssertTrue(command.contains("/usr/bin/pmset -a disablesleep 1"))
         XCTAssertTrue(command.contains("/usr/bin/pmset -a disablesleep 0"))
         XCTAssertTrue(command.contains("/bin/launchctl bootstrap system"))
+        XCTAssertFalse(command.contains("launchctl kickstart"))
         XCTAssertTrue(command.contains("com.josh.DontDieOnMeNow.restore"))
         XCTAssertTrue(command.contains("/Library/LaunchDaemons/com.josh.DontDieOnMeNow.restore.plist"))
         XCTAssertTrue(command.contains("/Library/Application Support/DontDieOnMeNow/restore_once.sh"))
@@ -91,8 +92,8 @@ final class PowerSettingsClientTests: XCTestCase {
         XCTAssertFalse(command.contains("/bin/sleep \"$((deadline - now))\""))
     }
 
-    func testPrivilegedHelperRequestUsesFixedKeyValueProtocol() {
-        let request = PrivilegedHelperRequest(
+    func testPrivilegedHelperRequestUsesFixedKeyValueProtocol() throws {
+        let request = try PrivilegedHelperRequest.validated(
             action: .start,
             timedRestore: TimedRestore(
                 seconds: 3_600,
@@ -163,9 +164,11 @@ final class PowerSettingsClientTests: XCTestCase {
     func testPrivilegedHelperClientWritesRequestAndWaitsForMatchingResponse() throws {
         let temporaryDirectory = try makeTemporaryDirectory()
         let requestDirectory = temporaryDirectory.appendingPathComponent("helper", isDirectory: true)
+        var kickstartCount = 0
         let client = PrivilegedHelperClient(
             requestDirectory: requestDirectory,
             launchDaemonURL: temporaryDirectory.appendingPathComponent("helper.plist"),
+            kickstartService: { kickstartCount += 1 },
             responseTimeout: 1,
             pollInterval: 0.01
         )
@@ -215,6 +218,7 @@ final class PowerSettingsClientTests: XCTestCase {
         XCTAssertTrue(requestContents.contains("action=start\n"))
         XCTAssertTrue(requestContents.contains("seconds=3600\n"))
         XCTAssertTrue(requestContents.contains("token=token-1\n"))
+        XCTAssertEqual(kickstartCount, 1)
         wait(for: [responseExpectation], timeout: 1)
     }
 

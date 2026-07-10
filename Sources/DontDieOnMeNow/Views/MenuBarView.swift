@@ -46,12 +46,14 @@ struct MenuBarView: View {
             .padding(.top, isReady ? 12 : 14)
             .padding(.bottom, 12)
 
-            Divider()
-                .padding(.horizontal, 18)
+            if !store.snapshot.sleepSetting.isDisabled {
+                Divider()
+                    .padding(.horizontal, 18)
 
-            footer
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                footer
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+            }
         }
         .frame(width: 320)
         .animation(.easeInOut(duration: 0.2), value: store.statusMessage)
@@ -73,10 +75,8 @@ struct MenuBarView: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(statusColor.opacity(0.15))
                     .frame(width: 36, height: 36)
-                Image(systemName: store.menuBarSystemImage)
-                    .font(.system(size: 18, weight: .semibold))
+                MenuBarStatusIcon(icon: store.menuBarIcon, size: 20)
                     .foregroundStyle(statusColor)
-                    .symbolRenderingMode(.hierarchical)
             }
 
             VStack(alignment: .leading, spacing: 1) {
@@ -166,6 +166,7 @@ struct MenuBarView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(store.isWorking)
+                .accessibilityLabel("Start custom awake session")
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -184,6 +185,8 @@ struct MenuBarView: View {
                 .foregroundStyle(Color.primary)
                 .padding(.horizontal, 10)
                 .disabled(store.isWorking)
+                .accessibilityLabel("Custom duration in minutes")
+                .accessibilityHint("Enter 5 to 1440 minutes")
                 .onSubmit {
                     if let customMinutes = parsedCustomMinutes {
                         startCustomSession(minutes: customMinutes)
@@ -218,20 +221,19 @@ struct MenuBarView: View {
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
         .disabled(store.isWorking)
+        .accessibilityLabel("Keep awake \(duration.label)")
         .help(duration.label)
     }
 
     private var parsedCustomMinutes: Int? {
         let trimmedValue = customMinutesText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedValue.isEmpty,
-              let minutes = Int(trimmedValue) else {
+              let minutes = Int(trimmedValue),
+              store.customDurationBounds.contains(minutes) else {
             return nil
         }
 
-        return min(
-            max(minutes, store.customDurationBounds.lowerBound),
-            store.customDurationBounds.upperBound
-        )
+        return minutes
     }
 
     private func updateCustomMinutesInput(_ value: String) {

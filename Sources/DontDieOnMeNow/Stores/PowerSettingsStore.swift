@@ -13,9 +13,11 @@ final class PowerSettingsStore: ObservableObject {
     private let defaults: UserDefaults
     private let timedCancelPollInterval: TimeInterval
     private let timedCancelTimeout: TimeInterval
+    private let expiredSessionRefreshInterval: TimeInterval
     private var sessionToken: String?
     private var tickTimer: Timer?
     private var didRequestExpiredSessionRefresh = false
+    private var nextExpiredSessionRefreshAt: Date?
 
     private enum DefaultsKey {
         static let selectedDuration = "selectedDuration"
@@ -35,12 +37,14 @@ final class PowerSettingsStore: ObservableObject {
         tickInterval: TimeInterval = 1,
         refreshOnStart: Bool = false,
         timedCancelPollInterval: TimeInterval = 0.5,
-        timedCancelTimeout: TimeInterval = 8
+        timedCancelTimeout: TimeInterval = 8,
+        expiredSessionRefreshInterval: TimeInterval = 5
     ) {
         self.client = client
         self.defaults = defaults
         self.timedCancelPollInterval = timedCancelPollInterval
         self.timedCancelTimeout = timedCancelTimeout
+        self.expiredSessionRefreshInterval = max(0.01, expiredSessionRefreshInterval)
         selectedDuration = AwakeDuration(storedValue: defaults.string(forKey: DefaultsKey.selectedDuration))
         customDurationMinutes = Self.clampCustomDurationMinutes(
             defaults.integer(forKey: DefaultsKey.customDurationMinutes)
@@ -85,24 +89,45 @@ final class PowerSettingsStore: ObservableObject {
         return Self.formatMenuBarRemaining(remaining)
     }
 
-    var menuBarSystemImage: String {
+    var menuBarIcon: MenuBarIcon {
         if isWorking {
-            return "arrow.clockwise"
+            return .system(name: "arrow.clockwise")
         }
 
         switch snapshot.sleepSetting {
         case .disabled:
             if activeUntil == nil {
-                return "infinity"
+                return .coffee(steaming: true)
             }
             if let remaining = remainingTime, remaining > 0 {
-                return "timer"
+                return .coffee(steaming: true)
             }
-            return "exclamationmark.triangle.fill"
+            return .system(name: "exclamationmark.triangle.fill")
         case .normal:
-            return "moon.fill"
+            return .coffee(steaming: false)
         case .unknown:
-            return "moon"
+            return .coffee(steaming: false)
+        }
+    }
+
+    var menuBarAccessibilityLabel: String {
+        if isWorking {
+            return "Updating sleep settings"
+        }
+
+        switch snapshot.sleepSetting {
+        case .disabled:
+            if activeUntil == nil {
+                return "Keeping awake until stopped"
+            }
+            if let remaining = remainingTime, remaining > 0 {
+                return "Keeping awake, \(Self.formatMenuBarRemaining(remaining)) remaining"
+            }
+            return "Needs attention: timer ended but sleep is still disabled"
+        case .normal:
+            return "Ready"
+        case .unknown:
+            return "Checking sleep settings"
         }
     }
 
@@ -317,8 +342,10 @@ final class PowerSettingsStore: ObservableObject {
            activeUntil <= Date(),
            snapshot.sleepSetting.isDisabled,
            !isWorking,
-           !didRequestExpiredSessionRefresh {
+           !didRequestExpiredSessionRefresh,
+           nextExpiredSessionRefreshAt.map({ $0 <= Date() }) ?? true {
             didRequestExpiredSessionRefresh = true
+            nextExpiredSessionRefreshAt = Date().addingTimeInterval(expiredSessionRefreshInterval)
             refresh { [weak self] _ in
                 self?.didRequestExpiredSessionRefresh = false
                 self?.statusMessage = "Could not check sleep state. Will try again."
@@ -417,11 +444,14 @@ final class PowerSettingsStore: ObservableObject {
         case .preserve:
             if !snapshot.sleepSetting.isDisabled {
                 clearSession()
+            } else if let activeUntil, activeUntil <= Date() {
+                didRequestExpiredSessionRefresh = false
             }
         case let .set(activeUntil, token):
             self.activeUntil = activeUntil
             sessionToken = token
             didRequestExpiredSessionRefresh = false
+            nextExpiredSessionRefreshAt = nil
             if let activeUntil {
                 defaults.set(activeUntil.timeIntervalSince1970, forKey: DefaultsKey.activeUntil)
             } else {
@@ -438,6 +468,7 @@ final class PowerSettingsStore: ObservableObject {
         activeUntil = nil
         sessionToken = nil
         didRequestExpiredSessionRefresh = false
+        nextExpiredSessionRefreshAt = nil
         defaults.removeObject(forKey: DefaultsKey.activeUntil)
         defaults.removeObject(forKey: DefaultsKey.sessionToken)
         defaults.removeObject(forKey: DefaultsKey.sessionStartedAt)

@@ -21,13 +21,13 @@ struct DontDieOnMeNowApp: App {
             MenuBarView(store: store)
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: store.menuBarSystemImage)
-                    .font(.system(size: 16, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
+                MenuBarStatusIcon(icon: store.menuBarIcon, size: 18)
                 if let menuBarTitle = store.menuBarTitle {
                     Text(menuBarTitle)
                 }
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(store.menuBarAccessibilityLabel)
         }
         .menuBarExtraStyle(.window)
     }

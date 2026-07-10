@@ -44,7 +44,6 @@ enum PowerSettingsParser {
             }
         }
 
-        return PowerSettingsSnapshot(sleepSetting: .normal, rawOutput: output)
+        return PowerSettingsSnapshot(sleepSetting: .unknown("missing"), rawOutput: output)
     }
 }
-

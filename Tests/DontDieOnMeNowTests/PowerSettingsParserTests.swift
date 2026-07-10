@@ -26,7 +26,7 @@ final class PowerSettingsParserTests: XCTestCase {
         XCTAssertEqual(snapshot.sleepSetting, .normal)
     }
 
-    func testDefaultsToNormalWhenSettingIsMissing() {
+    func testTreatsMissingSettingAsUnknown() {
         let output = """
         Currently in use:
          standby              1
@@ -35,7 +35,7 @@ final class PowerSettingsParserTests: XCTestCase {
 
         let snapshot = PowerSettingsParser.parse(output)
 
-        XCTAssertEqual(snapshot.sleepSetting, .normal)
+        XCTAssertEqual(snapshot.sleepSetting, .unknown("missing"))
     }
 
     func testPreservesUnknownValue() {
@@ -49,4 +49,3 @@ final class PowerSettingsParserTests: XCTestCase {
         XCTAssertEqual(snapshot.sleepSetting, .unknown("maybe"))
     }
 }
-

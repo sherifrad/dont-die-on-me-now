@@ -11,20 +11,6 @@ struct PrivilegedHelperRequest: Equatable {
     let timedRestore: TimedRestore?
     let sessionToken: String?
 
-    init(
-        requestID: String = UUID().uuidString,
-        action: PrivilegedHelperAction,
-        timedRestore: TimedRestore?,
-        sessionToken: String?
-    ) {
-        self = try! Self.validated(
-            requestID: requestID,
-            action: action,
-            timedRestore: timedRestore,
-            sessionToken: sessionToken
-        )
-    }
-
     static func validated(
         requestID: String = UUID().uuidString,
         action: PrivilegedHelperAction,
@@ -119,6 +105,7 @@ struct PrivilegedHelperClient {
     private let requestDirectory: URL
     private let launchDaemonURL: URL
     private let isServiceLoaded: () -> Bool
+    private let kickstartService: () -> Void
     private let responseTimeout: TimeInterval
     private let pollInterval: TimeInterval
 
@@ -127,13 +114,15 @@ struct PrivilegedHelperClient {
         requestDirectory: URL = PrivilegedHelperClient.defaultRequestDirectory(),
         launchDaemonURL: URL = URL(fileURLWithPath: "/Library/LaunchDaemons/com.josh.DontDieOnMeNow.helper.plist"),
         isServiceLoaded: @escaping () -> Bool = PrivilegedHelperClient.defaultIsServiceLoaded,
+        kickstartService: @escaping () -> Void = PrivilegedHelperClient.defaultKickstartService,
         responseTimeout: TimeInterval = PrivilegedHelperClient.defaultResponseTimeout,
-        pollInterval: TimeInterval = 0.1
+        pollInterval: TimeInterval = 0.02
     ) {
         self.fileManager = fileManager
         self.requestDirectory = requestDirectory
         self.launchDaemonURL = launchDaemonURL
         self.isServiceLoaded = isServiceLoaded
+        self.kickstartService = kickstartService
         self.responseTimeout = responseTimeout
         self.pollInterval = pollInterval
     }
@@ -182,6 +171,7 @@ struct PrivilegedHelperClient {
             try fileManager.removeItem(at: requestURL)
         }
         try fileManager.moveItem(at: temporaryURL, to: requestURL)
+        kickstartService()
         try waitForResponse(requestID: request.requestID)
     }
 
@@ -254,6 +244,20 @@ struct PrivilegedHelperClient {
             return process.terminationStatus == 0
         } catch {
             return false
+        }
+    }
+
+    private static func defaultKickstartService() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = ["kickstart", "-k", "system/com.josh.DontDieOnMeNow.helper"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+        } catch {
+            // The caller times out and uses the administrator fallback if launchctl is unavailable.
         }
     }
 

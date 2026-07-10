@@ -75,6 +75,18 @@ extension PowerSettingsClient {
                 }
             },
             requestTimedRestoreCancellation: { token in
+                if helper.isInstalled {
+                    do {
+                        try helper.setSleepDisabled(
+                            disabled: false,
+                            timedRestore: nil,
+                            sessionToken: "off"
+                        )
+                        return
+                    } catch {
+                        // The root restore job remains a no-prompt fallback for timed sessions.
+                    }
+                }
                 try TimedRestoreCancellation.requestCancellation(token: token)
             }
         )

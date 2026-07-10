@@ -5,9 +5,10 @@ APP_DISPLAY_NAME="Don't Die On Me Now"
 APP_PROCESS_NAME="DontDieOnMeNow"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_APP="$ROOT_DIR/dist/$APP_DISPLAY_NAME.app"
+PREBUILT_APP=""
 INSTALL_DIR="$HOME/Applications"
-INSTALL_AT_LOGIN=1
-INSTALL_HELPER=0
+INSTALL_AT_LOGIN=0
+INSTALL_HELPER=1
 LAUNCH_APP=1
 USE_SUDO_FOR_COPY=0
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
@@ -21,9 +22,11 @@ Builds, installs, registers, and launches $APP_DISPLAY_NAME.
 Options:
   --at-login       Open the menu bar app automatically when you log in.
   --no-at-login    Do not install the login launcher.
-  --helper         Install the optional privileged helper for fewer password prompts.
+  --helper         Install the privileged helper (the default).
+  --no-helper      Skip the helper and use an administrator prompt on each change.
   --system         Install to /Applications instead of ~/Applications.
   --install-dir X  Install to a custom Applications directory.
+  --prebuilt-app X Install an existing app bundle instead of building from source.
   --no-launch      Install but do not launch the app.
   -h, --help       Show this help.
 
@@ -43,6 +46,9 @@ while [ "$#" -gt 0 ]; do
     --helper)
       INSTALL_HELPER=1
       ;;
+    --no-helper)
+      INSTALL_HELPER=0
+      ;;
     --system)
       INSTALL_DIR="/Applications"
       USE_SUDO_FOR_COPY=1
@@ -53,6 +59,14 @@ while [ "$#" -gt 0 ]; do
         exit 2
       fi
       INSTALL_DIR="$2"
+      shift
+      ;;
+    --prebuilt-app)
+      if [ "$#" -lt 2 ]; then
+        echo "--prebuilt-app needs a path." >&2
+        exit 2
+      fi
+      PREBUILT_APP="$2"
       shift
       ;;
     --no-launch)
@@ -73,8 +87,26 @@ done
 
 APP_PATH="$INSTALL_DIR/$APP_DISPLAY_NAME.app"
 
+case "$INSTALL_DIR" in
+  /*) ;;
+  *)
+    echo "Install directory must be an absolute path: $INSTALL_DIR" >&2
+    exit 2
+    ;;
+esac
+
+install_dir_needs_sudo() {
+  local existing_path="$INSTALL_DIR"
+
+  while [ ! -e "$existing_path" ]; do
+    existing_path="$(/usr/bin/dirname "$existing_path")"
+  done
+
+  [ ! -w "$existing_path" ]
+}
+
 copy_app() {
-  if [ "$USE_SUDO_FOR_COPY" -eq 1 ] || { [ -e "$INSTALL_DIR" ] && [ ! -w "$INSTALL_DIR" ]; }; then
+  if [ "$USE_SUDO_FOR_COPY" -eq 1 ] || install_dir_needs_sudo; then
     /usr/bin/sudo /bin/mkdir -p "$INSTALL_DIR"
     /usr/bin/sudo /bin/rm -rf "$APP_PATH"
     /usr/bin/sudo /usr/bin/ditto "$DIST_APP" "$APP_PATH"
@@ -96,17 +128,29 @@ register_app() {
 }
 
 cd "$ROOT_DIR"
-./script/build_and_run.sh --build-only >/dev/null
+if [ -n "$PREBUILT_APP" ]; then
+  DIST_APP="$PREBUILT_APP"
+else
+  ./script/build_and_run.sh --build-only >/dev/null
+fi
+
+if [ ! -d "$DIST_APP" ]; then
+  echo "App bundle not found: $DIST_APP" >&2
+  exit 1
+fi
+
 copy_app
 /usr/bin/codesign --verify --deep --strict "$APP_PATH" >/dev/null
 register_app
 
-if [ "$INSTALL_AT_LOGIN" -eq 1 ]; then
-  ./script/install_login_launcher.sh "$APP_PATH"
-fi
-
 if [ "$INSTALL_HELPER" -eq 1 ]; then
   ./script/install_privileged_helper.sh
+fi
+
+if [ "$INSTALL_AT_LOGIN" -eq 1 ]; then
+  ./script/install_login_launcher.sh "$APP_PATH"
+else
+  ./script/uninstall_login_launcher.sh
 fi
 
 if [ "$LAUNCH_APP" -eq 1 ]; then
@@ -124,5 +168,5 @@ fi
 if [ "$INSTALL_HELPER" -eq 1 ]; then
   echo "Helper: installed."
 else
-  echo "Helper: not installed. Add --helper for fewer password prompts."
+  echo "Helper: skipped. macOS will request administrator approval when sleep settings change."
 fi
