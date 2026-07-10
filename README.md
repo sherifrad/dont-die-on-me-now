@@ -15,7 +15,7 @@ Copy and paste this message into Codex or Claude Code on the Mac where you want 
 Install Don't Die On Me Now from:
 https://github.com/ILikeAI/dont-die-on-me-now
 
-Follow the repository instructions. Run the default installer, launch the app, and verify it works. Do not start an awake session. Pass on the repository's heat warning. Once it is running, ask whether it should open automatically at login and apply my answer.
+Follow the repository instructions. Run the default installer. Then start the installed app and verify it is running in the menu bar. Do not start an awake session. Pass on the repository's heat warning. Once it is running, ask whether it should open automatically at login and apply my answer.
 ```
 
 ## Install Manually

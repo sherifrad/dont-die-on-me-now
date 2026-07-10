@@ -53,7 +53,8 @@ final class ScriptSafetyTests: XCTestCase {
         let readme = try readRootFile("README.md")
 
         XCTAssertTrue(readme.contains("https://github.com/ILikeAI/dont-die-on-me-now"))
-        XCTAssertTrue(readme.contains("Run the default installer, launch the app, and verify it works"))
+        XCTAssertTrue(readme.contains("Run the default installer"))
+        XCTAssertTrue(readme.contains("start the installed app and verify it is running in the menu bar"))
         XCTAssertTrue(readme.contains("ask whether it should open automatically at login"))
         XCTAssertTrue(readme.contains("Do not start an awake session"))
         XCTAssertTrue(readme.contains("Pass on the repository's heat warning"))
