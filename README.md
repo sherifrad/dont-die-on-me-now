@@ -7,6 +7,8 @@ A small macOS menu bar utility for keeping Codex and Claude Code running while a
 
 Choose 30 minutes, 2 hours, 6 hours, a custom duration, or an infinite session. Timed sessions restore normal sleep automatically.
 
+![Starting a two-hour awake session from the menu bar](media/dont-die-on-me-now-demo.gif)
+
 ## Install With Codex Or Claude Code
 
 Copy and paste this message into Codex or Claude Code on the Mac where you want the app installed:
@@ -15,14 +17,16 @@ Copy and paste this message into Codex or Claude Code on the Mac where you want 
 Install Don't Die On Me Now from:
 https://github.com/ILikeAI/dont-die-on-me-now
 
-Follow the repository instructions. Run the default installer. Then start the installed app and verify it is running in the menu bar. Do not start an awake session. Pass on the repository's heat warning. Once it is running, ask whether it should open automatically at login and apply my answer.
+Clone the repository. Run the default installer to build and install the app. Then start the installed app and verify it is running in the menu bar. Do not start an awake session. Pass on the repository's heat warning. Once it is running, ask whether it should open automatically at login and apply my answer.
 ```
 
 ## Install Manually
 
-Download a release ZIP, unzip it, open Terminal in the extracted folder, and run:
+This requires the Xcode command-line tools.
 
 ```sh
+git clone https://github.com/ILikeAI/dont-die-on-me-now.git
+cd dont-die-on-me-now
 ./install.sh
 ```
 
@@ -41,13 +45,7 @@ Useful install options:
 
 The helper supports one macOS user account per Mac. This is normally irrelevant on a developer laptop, but the installer refuses to silently replace a helper configured for another user.
 
-Release archives contain a prebuilt app, so Xcode is not required. An agent can also install from a source clone; that path requires the Xcode command-line tools:
-
-```sh
-./install.sh
-```
-
-This is an unsigned, ad-hoc-signed developer utility. It is intended for private GitHub distribution, not the Mac App Store. If macOS blocks the app, Control-click it in `~/Applications` and choose Open once.
+The app is built locally from source and ad-hoc signed. It is not a Mac App Store app.
 
 ## Use
 
@@ -86,9 +84,7 @@ Infinite mode is intentionally different. It stays active until Stop is clicked 
 
 ## Update
 
-Download and extract a newer release ZIP, then run its installer again. The app and login launcher are replaced in place.
-
-From a source clone, update with:
+From the source clone, update with:
 
 ```sh
 git pull
@@ -124,7 +120,6 @@ Run these from a source clone:
 ```sh
 swift test                         # Run the test suite
 ./script/build_and_run.sh          # Build and launch from the repo
-./script/package_release.sh        # Build a self-contained release zip
 ./script/safety_status.sh          # Inspect sleep, helper, and launchd state
 ```
 
@@ -144,9 +139,7 @@ Requires macOS 13 or newer and a Mac that supports:
 pmset -a disablesleep
 ```
 
-The app verifies the `pmset` result after every change. macOS 13 is the deployment target; releases should still be smoke-tested on the oldest macOS version you intend to support.
-
-Release ZIPs contain a universal app for both Apple Silicon and Intel Macs.
+The app verifies the `pmset` result after every change. It has been tested on macOS 14.6. Other macOS versions have not been personally tested.
 
 ## Privacy
 

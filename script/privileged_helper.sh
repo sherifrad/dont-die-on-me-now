@@ -2,7 +2,7 @@
 set -euo pipefail
 
 LABEL="com.josh.DontDieOnMeNow.helper"
-HELPER_VERSION="7"
+HELPER_VERSION="8"
 ROOT_DIR="/Library/Application Support/DontDieOnMeNow"
 CONFIG_FILE="$ROOT_DIR/helper.conf"
 RESTORE_LABEL="com.josh.DontDieOnMeNow.restore"
@@ -71,17 +71,21 @@ is_safe_identifier() {
 
 request_directory_is_safe() {
   local owner
+  local mode
 
   if [ ! -d "$REQUEST_DIR" ] || [ -L "$REQUEST_DIR" ]; then
     return 1
   fi
 
   owner="$(/usr/bin/stat -f '%u' "$REQUEST_DIR" 2>/dev/null || true)"
-  [ "$owner" = "$USER_UID" ]
+  mode="$(/usr/bin/stat -f '%Lp' "$REQUEST_DIR" 2>/dev/null || true)"
+  [ "$owner" = "$USER_UID" ] && [ "$mode" = "700" ]
 }
 
 request_file_is_safe() {
   local owner
+  local mode
+  local link_count
   local size
   local request_file="$REQUEST_DIR/request"
 
@@ -90,12 +94,17 @@ request_file_is_safe() {
   fi
 
   owner="$(/usr/bin/stat -f '%u' "$request_file" 2>/dev/null || true)"
+  mode="$(/usr/bin/stat -f '%Lp' "$request_file" 2>/dev/null || true)"
+  link_count="$(/usr/bin/stat -f '%l' "$request_file" 2>/dev/null || true)"
   size="$(/usr/bin/stat -f '%z' "$request_file" 2>/dev/null || true)"
   case "$size" in
     ""|*[!0-9]*) return 1 ;;
   esac
 
-  [ "$owner" = "$USER_UID" ] && [ "$size" -le 4096 ]
+  [ "$owner" = "$USER_UID" ] \
+    && [ "$mode" = "600" ] \
+    && [ "$link_count" = "1" ] \
+    && [ "$size" -le 4096 ]
 }
 
 is_safe_path() {

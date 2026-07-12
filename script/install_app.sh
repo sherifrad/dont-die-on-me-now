@@ -5,7 +5,6 @@ APP_DISPLAY_NAME="Don't Die On Me Now"
 APP_PROCESS_NAME="DontDieOnMeNow"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_APP="$ROOT_DIR/dist/$APP_DISPLAY_NAME.app"
-PREBUILT_APP=""
 INSTALL_DIR="$HOME/Applications"
 INSTALL_AT_LOGIN=0
 INSTALL_HELPER=1
@@ -26,7 +25,6 @@ Options:
   --no-helper      Skip the helper and use an administrator prompt on each change.
   --system         Install to /Applications instead of ~/Applications.
   --install-dir X  Install to a custom Applications directory.
-  --prebuilt-app X Install an existing app bundle instead of building from source.
   --no-launch      Install but do not launch the app.
   -h, --help       Show this help.
 
@@ -59,14 +57,6 @@ while [ "$#" -gt 0 ]; do
         exit 2
       fi
       INSTALL_DIR="$2"
-      shift
-      ;;
-    --prebuilt-app)
-      if [ "$#" -lt 2 ]; then
-        echo "--prebuilt-app needs a path." >&2
-        exit 2
-      fi
-      PREBUILT_APP="$2"
       shift
       ;;
     --no-launch)
@@ -128,11 +118,7 @@ register_app() {
 }
 
 cd "$ROOT_DIR"
-if [ -n "$PREBUILT_APP" ]; then
-  DIST_APP="$PREBUILT_APP"
-else
-  ./script/build_and_run.sh --build-only >/dev/null
-fi
+./script/build_and_run.sh --build-only >/dev/null
 
 if [ ! -d "$DIST_APP" ]; then
   echo "App bundle not found: $DIST_APP" >&2

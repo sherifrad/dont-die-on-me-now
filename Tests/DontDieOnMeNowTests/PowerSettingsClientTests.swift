@@ -219,6 +219,12 @@ final class PowerSettingsClientTests: XCTestCase {
         XCTAssertTrue(requestContents.contains("seconds=3600\n"))
         XCTAssertTrue(requestContents.contains("token=token-1\n"))
         XCTAssertEqual(kickstartCount, 1)
+        let directoryAttributes = try FileManager.default.attributesOfItem(atPath: requestDirectory.path)
+        let requestAttributes = try FileManager.default.attributesOfItem(
+            atPath: requestDirectory.appendingPathComponent("request").path
+        )
+        XCTAssertEqual(directoryAttributes[.posixPermissions] as? NSNumber, NSNumber(value: 0o700))
+        XCTAssertEqual(requestAttributes[.posixPermissions] as? NSNumber, NSNumber(value: 0o600))
         wait(for: [responseExpectation], timeout: 1)
     }
 

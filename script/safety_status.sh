@@ -3,7 +3,6 @@ set -euo pipefail
 
 LOGIN_LABEL="com.josh.DontDieOnMeNow.login"
 RESTORE_LABEL="com.josh.DontDieOnMeNow.restore"
-FAILSAFE_LABEL="com.josh.DontDieOnMeNow.failsafe"
 HELPER_LABEL="com.josh.DontDieOnMeNow.helper"
 DEADLINE_FILE="/Library/Application Support/DontDieOnMeNow/deadline"
 
@@ -29,14 +28,6 @@ fi
 echo
 echo "timed restore job:"
 if /bin/launchctl print "system/$RESTORE_LABEL" >/dev/null 2>&1; then
-  echo "  loaded"
-else
-  echo "  not loaded"
-fi
-
-echo
-echo "failsafe daemon:"
-if /bin/launchctl print "system/$FAILSAFE_LABEL" >/dev/null 2>&1; then
   echo "  loaded"
 else
   echo "  not loaded"

@@ -4,6 +4,3 @@ DerivedData/
 dist/
 *.xcuserdata/
 *.DS_Store
-work/
-outputs/
-

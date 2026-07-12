@@ -62,12 +62,10 @@ final class ScriptSafetyTests: XCTestCase {
         XCTAssertTrue(readme.contains("use it at your own risk"))
     }
 
-    func testFailsafeCleanupIncludesTemporaryDeadlineFile() throws {
-        let failsafe = try readScript("failsafe_check.sh")
+    func testRecoveryToolsCoverTimedRestoreState() throws {
         let restoreNow = try readScript("restore_sleep_now.sh")
         let safetyStatus = try readScript("safety_status.sh")
 
-        XCTAssertTrue(failsafe.contains("deadline.tmp"))
         XCTAssertTrue(restoreNow.contains("deadline.tmp"))
         XCTAssertTrue(safetyStatus.contains("com.josh.DontDieOnMeNow.restore"))
     }
@@ -123,6 +121,9 @@ final class ScriptSafetyTests: XCTestCase {
         XCTAssertTrue(helper.contains("response_tmp=\"$ROOT_DIR/response.tmp.$$\""))
         XCTAssertTrue(helper.contains("request_file_is_safe"))
         XCTAssertTrue(helper.contains("[ \"$size\" -le 4096 ]"))
+        XCTAssertTrue(helper.contains("[ \"$mode\" = \"700\" ]"))
+        XCTAssertTrue(helper.contains("[ \"$mode\" = \"600\" ]"))
+        XCTAssertTrue(helper.contains("[ \"$link_count\" = \"1\" ]"))
         XCTAssertTrue(helper.contains("<key>SuccessfulExit</key>"))
         XCTAssertFalse(helper.contains("kickstart -k \"system/$RESTORE_LABEL\""))
         XCTAssertTrue(helper.contains("    /bin/sleep 1\n    ;;"))
@@ -131,7 +132,12 @@ final class ScriptSafetyTests: XCTestCase {
         XCTAssertTrue(install.contains("ProgramArguments.1 -string --once"))
         XCTAssertTrue(install.contains("ThrottleInterval -integer 0"))
         XCTAssertTrue(install.contains("DDONMN_HELPER_VERSION"))
+        XCTAssertTrue(install.contains("DDONMN_HELPER_SHA256"))
+        XCTAssertTrue(install.contains("INSTALLED_SHA256"))
+        XCTAssertTrue(install.contains("SOURCE_HELPER_SHA256"))
         XCTAssertTrue(install.contains("DDONMN_USER_UID"))
+        XCTAssertTrue(install.contains("DDONMN_USER_SUPPORT_DIR"))
+        XCTAssertTrue(install.contains("INSTALLED_USER_SUPPORT_DIR"))
         XCTAssertTrue(install.contains("if [ ! -f \"$PLIST_PATH\" ]; then"))
         XCTAssertTrue(install.contains("/usr/bin/mktemp -d /tmp/DontDieOnMeNow-helper.XXXXXX"))
         XCTAssertTrue(install.contains("trap cleanup_staging EXIT"))
@@ -139,16 +145,6 @@ final class ScriptSafetyTests: XCTestCase {
         XCTAssertFalse(install.contains("/usr/bin/sudo"))
         XCTAssertFalse(helper.contains("eval "))
         XCTAssertFalse(helper.contains("source "))
-    }
-
-    func testReleasePackageIncludesFrictionlessInstallerAndUninstaller() throws {
-        let packageScript = try readScript("package_release.sh")
-
-        XCTAssertTrue(packageScript.contains("install-prebuilt.sh"))
-        XCTAssertTrue(packageScript.contains("uninstall.sh"))
-        XCTAssertTrue(packageScript.contains("install_privileged_helper.sh"))
-        XCTAssertTrue(packageScript.contains("privileged_helper.sh"))
-        XCTAssertTrue(packageScript.contains("DontDieOnMeNow-$VERSION.zip"))
     }
 
     func testBuiltAppKeepsAnUninstallerAfterTheReleaseFolderIsDeleted() throws {
@@ -164,13 +160,10 @@ final class ScriptSafetyTests: XCTestCase {
     func testShellScriptsUseStrictMode() throws {
         for scriptName in [
             "build_and_run.sh",
-            "failsafe_check.sh",
             "install_app.sh",
             "install_privileged_helper.sh",
-            "install_failsafe_daemon.sh",
             "install_login_launcher.sh",
             "lid_closed_smoke_test.sh",
-            "package_release.sh",
             "privileged_helper.sh",
             "restore_sleep_now.sh",
             "safety_status.sh",
@@ -185,7 +178,7 @@ final class ScriptSafetyTests: XCTestCase {
             XCTAssertTrue(script.contains("set -euo pipefail"), scriptName)
         }
 
-        for rootScriptName in ["install.sh", "install-prebuilt.sh", "uninstall.sh"] {
+        for rootScriptName in ["install.sh", "uninstall.sh"] {
             let script = try readRootFile(rootScriptName)
             XCTAssertTrue(script.hasPrefix("#!/usr/bin/env bash"), rootScriptName)
             XCTAssertTrue(script.contains("set -euo pipefail"), rootScriptName)

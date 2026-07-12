@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Compatibility cleanup for older builds that installed a global failsafe daemon.
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
   exec /usr/bin/sudo /bin/bash "$0" "$@"
 fi

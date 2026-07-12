@@ -2,7 +2,7 @@
 set -euo pipefail
 
 LABEL="com.josh.DontDieOnMeNow.helper"
-HELPER_VERSION="7"
+HELPER_VERSION="8"
 ROOT_DIR="/Library/Application Support/DontDieOnMeNow"
 HELPER_PATH="$ROOT_DIR/privileged_helper.sh"
 CONFIG_PATH="$ROOT_DIR/helper.conf"
@@ -60,6 +60,7 @@ install_as_root() {
   local user_uid="$2"
   local user_gid="$3"
   local request_dir="$user_support_dir/helper"
+  local helper_sha256
 
   if [ "$(/usr/bin/id -u)" -ne 0 ]; then
     fail "The privileged helper installer must be authorized by macOS."
@@ -83,6 +84,7 @@ install_as_root() {
   /usr/sbin/chown root:wheel "$ROOT_DIR"
   /bin/chmod 700 "$ROOT_DIR"
   /usr/bin/install -m 700 -o root -g wheel "$SOURCE_HELPER" "$HELPER_PATH"
+  helper_sha256="$(/usr/bin/shasum -a 256 "$HELPER_PATH" | /usr/bin/awk '{print $1}')"
 
   /bin/cat > "$CONFIG_PATH" <<CONFIG
 REQUEST_DIR=$request_dir
@@ -102,7 +104,9 @@ CONFIG
   /usr/bin/plutil -insert ThrottleInterval -integer 0 "$PLIST_PATH"
   /usr/bin/plutil -insert EnvironmentVariables -dictionary "$PLIST_PATH"
   /usr/bin/plutil -insert EnvironmentVariables.DDONMN_HELPER_VERSION -string "$HELPER_VERSION" "$PLIST_PATH"
+  /usr/bin/plutil -insert EnvironmentVariables.DDONMN_HELPER_SHA256 -string "$helper_sha256" "$PLIST_PATH"
   /usr/bin/plutil -insert EnvironmentVariables.DDONMN_USER_UID -string "$user_uid" "$PLIST_PATH"
+  /usr/bin/plutil -insert EnvironmentVariables.DDONMN_USER_SUPPORT_DIR -string "$user_support_dir" "$PLIST_PATH"
   /usr/bin/plutil -insert StandardOutPath -string /var/log/dont-die-on-me-now-helper.log "$PLIST_PATH"
   /usr/bin/plutil -insert StandardErrorPath -string /var/log/dont-die-on-me-now-helper.log "$PLIST_PATH"
 
@@ -147,7 +151,10 @@ if [ "$(/usr/bin/stat -f '%u' "$REQUEST_DIR")" != "$USER_UID" ]; then
 fi
 
 INSTALLED_VERSION="$(plist_value EnvironmentVariables.DDONMN_HELPER_VERSION)"
+INSTALLED_SHA256="$(plist_value EnvironmentVariables.DDONMN_HELPER_SHA256)"
 INSTALLED_UID="$(plist_value EnvironmentVariables.DDONMN_USER_UID)"
+INSTALLED_USER_SUPPORT_DIR="$(plist_value EnvironmentVariables.DDONMN_USER_SUPPORT_DIR)"
+SOURCE_HELPER_SHA256="$(/usr/bin/shasum -a 256 "$SOURCE_HELPER" | /usr/bin/awk '{print $1}')"
 
 if [ -n "$INSTALLED_UID" ] && [ "$INSTALLED_UID" != "$USER_UID" ]; then
   echo "A helper is already installed for macOS user id $INSTALLED_UID." >&2
@@ -155,6 +162,8 @@ if [ -n "$INSTALLED_UID" ] && [ "$INSTALLED_UID" != "$USER_UID" ]; then
 fi
 
 if [ "$INSTALLED_VERSION" = "$HELPER_VERSION" ] \
+  && [ "$INSTALLED_SHA256" = "$SOURCE_HELPER_SHA256" ] \
+  && [ "$INSTALLED_USER_SUPPORT_DIR" = "$USER_SUPPORT_DIR" ] \
   && /bin/launchctl print "system/$LABEL" >/dev/null 2>&1; then
   echo "Privileged helper is already installed and current (version $HELPER_VERSION)."
   exit 0

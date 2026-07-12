@@ -158,6 +158,10 @@ struct PrivilegedHelperClient {
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: requestDirectory.path
+        )
         try? fileManager.removeItem(at: responseURL)
 
         let temporaryURL = requestDirectory.appendingPathComponent("request.\(request.requestID).tmp")

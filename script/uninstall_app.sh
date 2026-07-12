@@ -88,6 +88,7 @@ elif [ -d "$DESKTOP_SHORTCUT" ]; then
   fi
 fi
 
+# Older builds installed a global failsafe daemon; current builds use per-session restore jobs.
 if [ -e "/Library/LaunchDaemons/com.josh.DontDieOnMeNow.failsafe.plist" ] \
   || [ -e "/Library/Application Support/DontDieOnMeNow/failsafe_check.sh" ]; then
   "$ROOT_DIR/script/uninstall_failsafe_daemon.sh"
