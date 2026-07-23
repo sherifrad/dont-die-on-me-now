@@ -28,7 +28,7 @@ final class PowerSettingsStore: ObservableObject {
     }
 
     private static let defaultCustomDurationMinutes = 2 * 60
-    private static let customDurationRange = 5...(24 * 60)
+    private static let customDurationRange = 1...(24 * 60)
 
     init(
         client: PowerSettingsClient,

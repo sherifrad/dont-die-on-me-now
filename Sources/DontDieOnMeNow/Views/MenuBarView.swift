@@ -186,7 +186,7 @@ struct MenuBarView: View {
                 .padding(.horizontal, 10)
                 .disabled(store.isWorking)
                 .accessibilityLabel("Custom duration in minutes")
-                .accessibilityHint("Enter 5 to 1440 minutes")
+                .accessibilityHint("Enter 1 to 1440 minutes")
                 .onSubmit {
                     if let customMinutes = parsedCustomMinutes {
                         startCustomSession(minutes: customMinutes)

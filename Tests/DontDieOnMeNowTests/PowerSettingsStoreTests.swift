@@ -306,7 +306,10 @@ final class PowerSettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.customDurationMinutes, 120)
 
         store.setCustomDurationMinutes(2)
-        XCTAssertEqual(store.customDurationMinutes, 5)
+        XCTAssertEqual(store.customDurationMinutes, 2)
+        XCTAssertTrue(store.customDurationBounds.contains(1))
+        XCTAssertTrue(store.customDurationBounds.contains(4))
+        XCTAssertFalse(store.customDurationBounds.contains(0))
 
         store.setCustomDurationMinutes(2_000)
         XCTAssertEqual(store.customDurationMinutes, 1_440)
