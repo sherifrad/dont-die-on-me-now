@@ -84,9 +84,9 @@ Do not use this with a MacBook inside a bag or sleeve. Keep it on a hard, ventil
 
 Timed sessions do not depend on the menu bar app staying open. Their root restore job remains loaded until it restores normal sleep, and launchd restarts that job after an abnormal exit.
 
-Scheduled shutdowns also continue if the menu bar app is closed. The app saves the deadline so the countdown returns when it is reopened. Cancel a scheduled shutdown from the menu before it runs.
+Scheduled shutdowns are handed to macOS and continue if the menu bar app is closed. The app saves the deadline so the countdown returns when it is reopened. Cancel a scheduled shutdown from the menu before it runs.
 
-The OpenCode integration arms a one-shot marker for the next OpenCode session. `First task only` watches the first session that becomes busy. `All active tasks` watches every session that becomes busy while armed and waits for all of them to finish. OpenCode reports completion through its `session.idle` event, and the plugin sends a local notification URL containing the session IDs back to this app. Restart OpenCode after installing or updating the plugin so it reloads the integration.
+The OpenCode integration is installed at `$HOME/.config/opencode/plugins/dont-die-on-me-now.js` and removed by the app uninstaller. It arms a one-shot marker for the next OpenCode session. `First task only` watches the first session that becomes busy. `All active tasks` watches every session that becomes busy while armed and waits for all of them to finish. OpenCode reports completion through its `session.idle` event, and the plugin sends a local notification URL containing the session IDs back to this app. Restart OpenCode after installing or updating the plugin so it reloads the integration.
 
 Infinite mode is intentionally different. It stays active until Stop is clicked or normal sleep is restored manually. If the app is force-quit during an infinite session, reopen it and click Stop, or run:
 

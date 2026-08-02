@@ -18,13 +18,14 @@ Don't Die On Me Now is a local macOS menu bar utility for keeping a Mac awake wh
 - Presets and custom shutdown delays from 1 minute through 24 hours.
 - Optional quiet shutdown mode to suppress the normal macOS shutdown warning.
 - A live countdown is shown in the menu bar window.
-- Scheduled shutdown deadlines are saved locally and restored when the app is reopened.
+- The shutdown is handed to macOS and continues if the menu bar app is closed.
+- The deadline is saved locally, so reopening the app restores the remaining countdown display.
 - A Cancel control removes the pending shutdown before it runs.
 - The app uses the installed privileged helper when available and falls back to the standard macOS administrator prompt when the helper is unavailable or unhealthy.
 
 ### OpenCode Completion Trigger
 
-The Shutdown Mac section can defer the shutdown countdown until OpenCode work finishes. The installer places a small local plugin in the user's OpenCode plugin directory.
+The Shutdown Mac section can defer the shutdown countdown until OpenCode work finishes. The installer places a small local plugin at `$HOME/.config/opencode/plugins/dont-die-on-me-now.js`; the app uninstaller removes that plugin. Restart OpenCode after installation or updates so it loads the plugin.
 
 The user can choose one of two monitoring modes:
 
