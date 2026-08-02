@@ -38,6 +38,35 @@ final class PowerSettingsParserTests: XCTestCase {
         XCTAssertEqual(snapshot.sleepSetting, .unknown("missing"))
     }
 
+    func testParsesNormalSystemSleepAssertion() {
+        let output = """
+        Assertion status system-wide:
+           PreventSystemSleep             0
+        """
+
+        let snapshot = PowerSettingsParser.parseAssertions(output)
+
+        XCTAssertEqual(snapshot?.sleepSetting, .normal)
+    }
+
+    func testDoesNotTreatSystemSleepAssertionAsDisabledSetting() {
+        let output = """
+        Assertion status system-wide:
+           PreventSystemSleep             1
+        """
+
+        XCTAssertNil(PowerSettingsParser.parseAssertions(output))
+    }
+
+    func testMissingSystemSleepAssertionReturnsNil() {
+        let output = """
+        Assertion status system-wide:
+           PreventUserIdleSystemSleep 1
+        """
+
+        XCTAssertNil(PowerSettingsParser.parseAssertions(output))
+    }
+
     func testPreservesUnknownValue() {
         let output = """
         System-wide power settings:

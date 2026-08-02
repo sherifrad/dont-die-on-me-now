@@ -46,4 +46,23 @@ enum PowerSettingsParser {
 
         return PowerSettingsSnapshot(sleepSetting: .unknown("missing"), rawOutput: output)
     }
+
+    static func parseAssertions(_ output: String) -> PowerSettingsSnapshot? {
+        for line in output.split(whereSeparator: \.isNewline) {
+            let parts = line.split(whereSeparator: \.isWhitespace)
+            guard parts.count >= 2,
+                  parts[0].lowercased() == "preventsystemsleep" else {
+                continue
+            }
+
+            let value = String(parts[1])
+            if value == "0" {
+                return PowerSettingsSnapshot(sleepSetting: .normal, rawOutput: output)
+            }
+
+            return nil
+        }
+
+        return nil
+    }
 }

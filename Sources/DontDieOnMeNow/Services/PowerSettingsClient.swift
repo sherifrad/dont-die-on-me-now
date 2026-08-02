@@ -31,7 +31,19 @@ extension PowerSettingsClient {
                         stderr: result.stderr
                     )
                 }
-                return PowerSettingsParser.parse(result.stdout)
+
+                let snapshot = PowerSettingsParser.parse(result.stdout)
+                guard case .unknown("missing") = snapshot.sleepSetting else {
+                    return snapshot
+                }
+
+                // macOS 26 omits SleepDisabled from pmset -g while normal.
+                let assertions = try runner.run("/usr/bin/pmset", arguments: ["-g", "assertions"])
+                guard assertions.terminationStatus == 0 else {
+                    return snapshot
+                }
+
+                return PowerSettingsParser.parseAssertions(assertions.stdout) ?? snapshot
             },
             setSleepDisabled: { disabled, timedRestore, sessionToken in
                 let preparedTimedRestore: TimedRestore?
