@@ -141,6 +141,8 @@ pmset -a disablesleep
 
 The app verifies the `pmset` result after every change. It has been tested on macOS 14.6. Other macOS versions have not been personally tested.
 
+On macOS 26.x, `pmset -g` may omit `SleepDisabled` while normal sleep is enabled. The app falls back to `pmset -g assertions` to recognize that normal state and fails closed when the result is ambiguous.
+
 ## Privacy
 
 - No telemetry.
