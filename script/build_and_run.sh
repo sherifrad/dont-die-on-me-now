@@ -7,7 +7,14 @@ DISPLAY_NAME="Don't Die On Me Now"
 BUNDLE_ID="com.josh.DontDieOnMeNow"
 MIN_SYSTEM_VERSION="13.0"
 BUILD_CONFIGURATION="release"
-BUILD_ARGUMENTS=(-c "$BUILD_CONFIGURATION" --arch arm64 --arch x86_64)
+BUILD_ARCHITECTURES=("$(/usr/bin/uname -m)")
+if [ -x "/Library/Developer/SharedFrameworks/XCBuild.framework/Versions/A/Support/xcbuild" ]; then
+  BUILD_ARCHITECTURES=(arm64 x86_64)
+fi
+BUILD_ARGUMENTS=(-c "$BUILD_CONFIGURATION")
+for architecture in "${BUILD_ARCHITECTURES[@]}"; do
+  BUILD_ARGUMENTS+=(--arch "$architecture")
+done
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -43,7 +50,7 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
-/usr/bin/lipo "$APP_BINARY" -verify_arch arm64 x86_64
+/usr/bin/lipo "$APP_BINARY" -verify_arch "${BUILD_ARCHITECTURES[@]}"
 
 mkdir -p "$APP_RESOURCES/script"
 cp "$ROOT_DIR/uninstall.sh" "$APP_RESOURCES/uninstall.sh"
@@ -51,9 +58,11 @@ for script_name in \
   uninstall_app.sh \
   uninstall_failsafe_daemon.sh \
   uninstall_login_launcher.sh \
-  uninstall_privileged_helper.sh; do
+  uninstall_privileged_helper.sh \
+  uninstall_opencode_plugin.sh; do
   cp "$ROOT_DIR/script/$script_name" "$APP_RESOURCES/script/$script_name"
 done
+cp "$ROOT_DIR/script/dont-die-on-me-now-opencode-plugin.js" "$APP_RESOURCES/script/dont-die-on-me-now-opencode-plugin.js"
 chmod +x "$APP_RESOURCES/uninstall.sh" "$APP_RESOURCES/script"/*.sh
 
 swift "$ROOT_DIR/script/generate_app_icon.swift" "$ICON_PATH"
@@ -84,6 +93,17 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$MIN_SYSTEM_VERSION</string>
   <key>LSUIElement</key>
   <true/>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>Don't Die On Me Now OpenCode completion</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>dont-die-on-me-now</string>
+      </array>
+    </dict>
+  </array>
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSPrincipalClass</key>

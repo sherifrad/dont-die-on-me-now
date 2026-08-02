@@ -315,6 +315,199 @@ final class PowerSettingsStoreTests: XCTestCase {
         XCTAssertEqual(store.customDurationMinutes, 1_440)
     }
 
+    func testOpenCodeMonitoringModeDefaultsAndPersists() {
+        let defaults = makeDefaults()
+        let store = PowerSettingsStore(client: .noop, defaults: defaults)
+
+        XCTAssertEqual(store.openCodeMonitoringMode, .firstTask)
+
+        store.setOpenCodeMonitoringMode(.allActiveTasks)
+
+        XCTAssertEqual(store.openCodeMonitoringMode, .allActiveTasks)
+        XCTAssertEqual(
+            defaults.string(forKey: "openCodeMonitoringMode"),
+            OpenCodeMonitoringMode.allActiveTasks.rawValue
+        )
+    }
+
+    func testScheduleShutdownPersistsDeadlineAndUsesSelectedDuration() {
+        let expectation = expectation(description: "shutdown scheduled")
+        var scheduledSeconds: Int?
+        var scheduledQuiet: Bool?
+        let shutdownClient = ShutdownClient(
+            schedule: { seconds, quiet in
+                scheduledSeconds = seconds
+                scheduledQuiet = quiet
+            },
+            cancel: {}
+        )
+        let defaults = makeDefaults()
+        let store = PowerSettingsStore(
+            client: .noop,
+            shutdownClient: shutdownClient,
+            defaults: defaults
+        )
+
+        store.scheduleShutdown(duration: .twoHours)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
+            XCTAssertEqual(scheduledSeconds, 7_200)
+            XCTAssertEqual(scheduledQuiet, false)
+            XCTAssertNotNil(store.shutdownUntil)
+            XCTAssertNotNil(store.shutdownSessionValue)
+            XCTAssertNotNil(defaults.object(forKey: "shutdownUntil"))
+            XCTAssertFalse(store.isWorking)
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
+    func testQuietShutdownPreferenceIsPersistedAndUsed() {
+        let expectation = expectation(description: "quiet shutdown scheduled")
+        let defaults = makeDefaults()
+        var scheduledQuiet: Bool?
+        let shutdownClient = ShutdownClient(
+            schedule: { _, quiet in scheduledQuiet = quiet },
+            cancel: {}
+        )
+        let store = PowerSettingsStore(
+            client: .noop,
+            shutdownClient: shutdownClient,
+            defaults: defaults
+        )
+
+        store.setQuietShutdown(true)
+        store.scheduleShutdown(duration: .twoHours)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
+            XCTAssertTrue(store.quietShutdown)
+            XCTAssertEqual(defaults.bool(forKey: "quietShutdown"), true)
+            XCTAssertEqual(scheduledQuiet, true)
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
+    func testOpenCodeCompletionStartsSelectedShutdownDelay() throws {
+        OpenCodeIntegration.disarm()
+        defer { OpenCodeIntegration.disarm() }
+
+        let expectation = expectation(description: "OpenCode completion schedules shutdown")
+        let defaults = makeDefaults()
+        var scheduledSeconds: Int?
+        var scheduledQuiet: Bool?
+        let shutdownClient = ShutdownClient(
+            schedule: { seconds, quiet in
+                scheduledSeconds = seconds
+                scheduledQuiet = quiet
+            },
+            cancel: {}
+        )
+        let store = PowerSettingsStore(
+            client: .noop,
+            shutdownClient: shutdownClient,
+            defaults: defaults
+        )
+
+        store.setWaitForOpenCode(true)
+        store.setOpenCodeMonitoringMode(.allActiveTasks)
+        store.setQuietShutdown(true)
+        store.scheduleShutdown(duration: .twoHours)
+
+        let marker = try String(contentsOf: OpenCodeIntegration.markerURL, encoding: .utf8)
+        XCTAssertTrue(marker.contains("mode=allActiveTasks"))
+        let token = try XCTUnwrap(
+            marker.split(separator: "\n")
+                .first(where: { $0.hasPrefix("token=") })
+                .map { String($0.dropFirst("token=".count)) }
+        )
+        let completionURL = try XCTUnwrap(
+            URL(string: "dont-die-on-me-now://opencode-finished?token=\(token)&session=session-1&outcome=error")
+        )
+        NotificationCenter.default.post(
+            name: OpenCodeIntegration.completionNotification,
+            object: completionURL
+        )
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
+            XCTAssertEqual(scheduledSeconds, 7_200)
+            XCTAssertEqual(scheduledQuiet, true)
+            XCTAssertFalse(store.openCodeShutdownArmed)
+            XCTAssertNotNil(store.shutdownUntil)
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
+    func testCancelShutdownClearsDeadlineOnlyAfterCancellationSucceeds() {
+        let expectation = expectation(description: "shutdown canceled")
+        let defaults = makeDefaults()
+        defaults.set(Date().addingTimeInterval(3_600).timeIntervalSince1970, forKey: "shutdownUntil")
+        var cancellationCount = 0
+        let shutdownClient = ShutdownClient(
+            schedule: { _, _ in },
+            cancel: { cancellationCount += 1 }
+        )
+        let store = PowerSettingsStore(
+            client: .noop,
+            shutdownClient: shutdownClient,
+            defaults: defaults
+        )
+
+        store.cancelShutdown()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
+            XCTAssertEqual(cancellationCount, 1)
+            XCTAssertNil(store.shutdownUntil)
+            XCTAssertNil(defaults.object(forKey: "shutdownUntil"))
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
+    func testFailedShutdownCancellationPreservesDeadline() {
+        let expectation = expectation(description: "shutdown cancellation fails")
+        let defaults = makeDefaults()
+        let deadline = Date().addingTimeInterval(3_600)
+        defaults.set(deadline.timeIntervalSince1970, forKey: "shutdownUntil")
+        let shutdownClient = ShutdownClient(
+            schedule: { _, _ in },
+            cancel: {
+                throw ShutdownClientError.commandFailed(status: 1, stderr: "not canceled")
+            }
+        )
+        let store = PowerSettingsStore(
+            client: .noop,
+            shutdownClient: shutdownClient,
+            defaults: defaults
+        )
+
+        store.cancelShutdown()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
+            XCTAssertNotNil(store.shutdownUntil)
+            XCTAssertNotNil(defaults.object(forKey: "shutdownUntil"))
+            XCTAssertEqual(store.alert?.title, "Could Not Cancel Shutdown")
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
+
+    func testExpiredPersistedShutdownDeadlineIsClearedOnStartup() {
+        let defaults = makeDefaults()
+        defaults.set(Date().addingTimeInterval(-1).timeIntervalSince1970, forKey: "shutdownUntil")
+
+        let store = PowerSettingsStore(client: .noop, defaults: defaults)
+
+        XCTAssertNil(store.shutdownUntil)
+        XCTAssertNil(defaults.object(forKey: "shutdownUntil"))
+    }
+
     func testRefreshClearsStaleTimedSessionWhenSleepIsNormal() {
         let expectation = expectation(description: "refresh completes")
         let defaults = makeDefaults()

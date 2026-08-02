@@ -22,6 +22,21 @@ enum PrivilegedPowerCommand {
         return "do shell script \"\(shellCommand.appleScriptEscaped)\" with administrator privileges"
     }
 
+    static func appleScriptToScheduleShutdown(after seconds: Int, quiet: Bool = false) -> String {
+        let shellCommand = shellCommandToScheduleShutdown(after: seconds, quiet: quiet)
+        return "do shell script \"\(shellCommand.appleScriptEscaped)\" with administrator privileges"
+    }
+
+    static func appleScriptToCancelShutdown() -> String {
+        let shellCommand = "/sbin/shutdown -c"
+        return "do shell script \"\(shellCommand.appleScriptEscaped)\" with administrator privileges"
+    }
+
+    static func shellCommandToScheduleShutdown(after seconds: Int, quiet: Bool = false) -> String {
+        let quietFlag = quiet ? " -q" : ""
+        return "/sbin/shutdown -h\(quietFlag) +\(seconds / 60)"
+    }
+
     static func shellCommand(
         disabled: Bool,
         timedRestore: TimedRestore? = nil,

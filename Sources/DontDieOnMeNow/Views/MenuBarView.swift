@@ -4,6 +4,7 @@ import SwiftUI
 struct MenuBarView: View {
     @ObservedObject var store: PowerSettingsStore
     @State private var customMinutesText = ""
+    @State private var shutdownMinutesText = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -41,6 +42,8 @@ struct MenuBarView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity)
                 }
+
+                shutdownSection
             }
             .padding(.horizontal, 18)
             .padding(.top, isReady ? 12 : 14)
@@ -277,6 +280,216 @@ struct MenuBarView: View {
         .tint(isStopAction ? .red : .accentColor)
         .controlSize(.large)
         .disabled(store.isWorking)
+    }
+
+    private var shutdownSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "power")
+                    .foregroundStyle(.orange)
+                Text("Shutdown Mac")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+
+            if let shutdownValue = store.shutdownSessionValue {
+                HStack(alignment: .center, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(shutdownValue)
+                            .font(.system(size: 22, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                        Text("until power off")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button("Cancel") {
+                        store.cancelShutdown()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(store.isWorking)
+                    .accessibilityLabel("Cancel scheduled shutdown")
+                }
+            } else if store.openCodeShutdownArmed {
+                HStack(alignment: .center, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Waiting for OpenCode")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text(
+                            store.activeOpenCodeMonitoringMode == .firstTask
+                                ? "Shutdown starts after the first task exits"
+                                : "Shutdown starts after all active tasks exit"
+                        )
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button("Cancel") {
+                        store.cancelOpenCodeShutdown()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            } else {
+                Text("Power off automatically after a delay.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                Toggle("Start countdown after OpenCode finishes", isOn: Binding(
+                    get: { store.waitForOpenCode },
+                    set: { store.setWaitForOpenCode($0) }
+                ))
+                .font(.caption)
+                .toggleStyle(.switch)
+                .help("Arm the selected shutdown delay for OpenCode tasks")
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("OpenCode monitoring")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Picker("Monitor", selection: Binding(
+                        get: { store.openCodeMonitoringMode },
+                        set: { store.setOpenCodeMonitoringMode($0) }
+                    )) {
+                        ForEach(OpenCodeMonitoringMode.allCases) { mode in
+                            Text(mode.label)
+                                .tag(mode)
+                        }
+                    }
+                    .font(.caption)
+                    .pickerStyle(.segmented)
+                    .help(store.openCodeMonitoringMode.help)
+                }
+
+                Toggle("Quiet shutdown", isOn: Binding(
+                    get: { store.quietShutdown },
+                    set: { store.setQuietShutdown($0) }
+                ))
+                .font(.caption)
+                .toggleStyle(.switch)
+                .help("Suppress macOS shutdown warning messages")
+
+                shutdownPresetButtons
+
+                HStack(spacing: 6) {
+                    shutdownCustomDurationField
+                    shutdownScheduleButton
+                }
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private var shutdownPresetButtons: some View {
+        let columns = [
+            GridItem(.flexible(), spacing: 6),
+            GridItem(.flexible(), spacing: 6),
+            GridItem(.flexible(), spacing: 6)
+        ]
+
+        return LazyVGrid(columns: columns, spacing: 6) {
+            ForEach(AwakeDuration.visiblePresets) { duration in
+                Button {
+                    store.scheduleShutdown(duration: duration)
+                } label: {
+                    Text(duration.compactLabel)
+                        .font(.system(size: 13, weight: .semibold))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 34)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(Color.orange.opacity(0.14))
+                        )
+                        .foregroundStyle(Color.primary)
+                }
+                .buttonStyle(.plain)
+                .disabled(store.isWorking)
+                .accessibilityLabel(
+                    store.waitForOpenCode
+                        ? "Shut down \(duration.label) after OpenCode finishes"
+                        : "Shut down after \(duration.label)"
+                )
+                .help("Shut down after \(duration.label)")
+            }
+        }
+    }
+
+    private var shutdownCustomDurationField: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.orange.opacity(0.1))
+
+            TextField("Minutes", text: $shutdownMinutesText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, weight: .semibold))
+                .monospacedDigit()
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Color.primary)
+                .padding(.horizontal, 10)
+                .disabled(store.isWorking)
+                .accessibilityLabel("Shutdown delay in minutes")
+                .accessibilityHint("Enter 1 to 1440 minutes")
+                .onSubmit {
+                    scheduleCustomShutdown()
+                }
+                .onChange(of: shutdownMinutesText) { newValue in
+                    updateShutdownMinutesInput(newValue)
+                }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 34)
+        .help("Custom shutdown delay in minutes")
+    }
+
+    private var shutdownScheduleButton: some View {
+        Button(store.waitForOpenCode ? "Wait" : "Schedule") {
+            scheduleCustomShutdown()
+        }
+        .font(.system(size: 13, weight: .semibold))
+        .frame(width: 88)
+        .frame(height: 34)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.orange)
+        )
+        .foregroundStyle(Color.white)
+        .buttonStyle(.plain)
+        .disabled(store.isWorking || parsedShutdownMinutes == nil)
+        .accessibilityLabel("Schedule custom shutdown")
+    }
+
+    private var parsedShutdownMinutes: Int? {
+        let trimmedValue = shutdownMinutesText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty,
+              let minutes = Int(trimmedValue),
+              store.customDurationBounds.contains(minutes) else {
+            return nil
+        }
+
+        return minutes
+    }
+
+    private func updateShutdownMinutesInput(_ value: String) {
+        let digitsOnly = value.filter(\.isWholeNumber)
+        if digitsOnly != value {
+            shutdownMinutesText = digitsOnly
+        }
+    }
+
+    private func scheduleCustomShutdown() {
+        guard let minutes = parsedShutdownMinutes else {
+            return
+        }
+
+        store.scheduleShutdown(minutes: minutes)
     }
 
     private var footer: some View {

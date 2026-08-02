@@ -8,6 +8,7 @@ DIST_APP="$ROOT_DIR/dist/$APP_DISPLAY_NAME.app"
 INSTALL_DIR="$HOME/Applications"
 INSTALL_AT_LOGIN=0
 INSTALL_HELPER=1
+INSTALL_OPENCODE=1
 LAUNCH_APP=1
 USE_SUDO_FOR_COPY=0
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
@@ -23,6 +24,8 @@ Options:
   --no-at-login    Do not install the login launcher.
   --helper         Install the privileged helper (the default).
   --no-helper      Skip the helper and use an administrator prompt on each change.
+  --opencode       Install the OpenCode completion integration (the default).
+  --no-opencode    Skip the OpenCode completion integration.
   --system         Install to /Applications instead of ~/Applications.
   --install-dir X  Install to a custom Applications directory.
   --no-launch      Install but do not launch the app.
@@ -46,6 +49,12 @@ while [ "$#" -gt 0 ]; do
       ;;
     --no-helper)
       INSTALL_HELPER=0
+      ;;
+    --opencode)
+      INSTALL_OPENCODE=1
+      ;;
+    --no-opencode)
+      INSTALL_OPENCODE=0
       ;;
     --system)
       INSTALL_DIR="/Applications"
@@ -133,6 +142,10 @@ if [ "$INSTALL_HELPER" -eq 1 ]; then
   ./script/install_privileged_helper.sh
 fi
 
+if [ "$INSTALL_OPENCODE" -eq 1 ]; then
+  /bin/bash ./script/install_opencode_plugin.sh
+fi
+
 if [ "$INSTALL_AT_LOGIN" -eq 1 ]; then
   ./script/install_login_launcher.sh "$APP_PATH"
 else
@@ -155,4 +168,9 @@ if [ "$INSTALL_HELPER" -eq 1 ]; then
   echo "Helper: installed."
 else
   echo "Helper: skipped. macOS will request administrator approval when sleep settings change."
+fi
+if [ "$INSTALL_OPENCODE" -eq 1 ]; then
+  echo "OpenCode: completion integration installed."
+else
+  echo "OpenCode: completion integration skipped."
 fi

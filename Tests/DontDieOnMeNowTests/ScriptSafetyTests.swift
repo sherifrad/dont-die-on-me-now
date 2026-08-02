@@ -26,11 +26,14 @@ final class ScriptSafetyTests: XCTestCase {
         XCTAssertTrue(script.contains("--no-at-login"))
         XCTAssertTrue(script.contains("--helper"))
         XCTAssertTrue(script.contains("--no-helper"))
+        XCTAssertTrue(script.contains("--opencode"))
+        XCTAssertTrue(script.contains("--no-opencode"))
         XCTAssertTrue(script.contains("INSTALL_AT_LOGIN=0"))
         XCTAssertTrue(script.contains("INSTALL_HELPER=1"))
         XCTAssertTrue(script.contains("install_login_launcher.sh"))
         XCTAssertTrue(script.contains("uninstall_login_launcher.sh"))
         XCTAssertTrue(script.contains("install_privileged_helper.sh"))
+        XCTAssertTrue(script.contains("install_opencode_plugin.sh"))
     }
 
     func testRootInstallScriptDelegatesToAppInstaller() throws {
@@ -103,6 +106,7 @@ final class ScriptSafetyTests: XCTestCase {
         let install = try readScript("install_privileged_helper.sh")
         let uninstall = try readScript("uninstall_privileged_helper.sh")
         let helper = try readScript("privileged_helper.sh")
+        let opencodePlugin = try readScript("dont-die-on-me-now-opencode-plugin.js")
 
         XCTAssertTrue(install.contains("com.josh.DontDieOnMeNow.helper"))
         XCTAssertTrue(install.contains("/Library/Application Support/DontDieOnMeNow"))
@@ -115,6 +119,17 @@ final class ScriptSafetyTests: XCTestCase {
         XCTAssertTrue(helper.contains("case \"$action\" in"))
         XCTAssertTrue(helper.contains("start)"))
         XCTAssertTrue(helper.contains("stop)"))
+        XCTAssertTrue(helper.contains("schedule_shutdown)"))
+        XCTAssertTrue(helper.contains("cancel_shutdown)"))
+        XCTAssertTrue(helper.contains("/sbin/shutdown -h"))
+        XCTAssertTrue(helper.contains("/sbin/shutdown -h -q"))
+        XCTAssertTrue(helper.contains("/sbin/shutdown -c"))
+        XCTAssertTrue(helper.contains("quiet_shutdown"))
+        XCTAssertTrue(opencodePlugin.contains("session.idle"))
+        XCTAssertTrue(opencodePlugin.contains("allActiveTasks"))
+        XCTAssertTrue(opencodePlugin.contains("trackedSessionIDs"))
+        XCTAssertTrue(opencodePlugin.contains("MessageAbortedError"))
+        XCTAssertTrue(opencodePlugin.contains("dont-die-on-me-now://opencode-finished"))
         XCTAssertTrue(helper.contains("/usr/bin/pmset -a disablesleep 1"))
         XCTAssertTrue(helper.contains("/usr/bin/pmset -a disablesleep 0"))
         XCTAssertTrue(helper.contains("restore_expired_deadline"))
@@ -153,7 +168,10 @@ final class ScriptSafetyTests: XCTestCase {
         XCTAssertTrue(buildScript.contains("$APP_RESOURCES/uninstall.sh"))
         XCTAssertTrue(buildScript.contains("uninstall_privileged_helper.sh"))
         XCTAssertTrue(buildScript.contains("uninstall_login_launcher.sh"))
-        XCTAssertTrue(buildScript.contains("--arch arm64 --arch x86_64"))
+        XCTAssertTrue(buildScript.contains("uninstall_opencode_plugin.sh"))
+        XCTAssertTrue(buildScript.contains("dont-die-on-me-now-opencode-plugin.js"))
+        XCTAssertTrue(buildScript.contains("BUILD_ARCHITECTURES=(arm64 x86_64)"))
+        XCTAssertTrue(buildScript.contains("/usr/bin/uname -m"))
         XCTAssertTrue(buildScript.contains("BUILD_CONFIGURATION=\"release\""))
     }
 
@@ -163,6 +181,7 @@ final class ScriptSafetyTests: XCTestCase {
             "install_app.sh",
             "install_privileged_helper.sh",
             "install_login_launcher.sh",
+            "install_opencode_plugin.sh",
             "lid_closed_smoke_test.sh",
             "privileged_helper.sh",
             "restore_sleep_now.sh",
@@ -171,6 +190,7 @@ final class ScriptSafetyTests: XCTestCase {
             "uninstall_privileged_helper.sh",
             "uninstall_failsafe_daemon.sh",
             "uninstall_login_launcher.sh",
+            "uninstall_opencode_plugin.sh",
         ] {
             let script = try readScript(scriptName)
 

@@ -8,8 +8,14 @@ final class PowerSettingsStore: ObservableObject {
     @Published private(set) var activeUntil: Date?
     @Published private(set) var selectedDuration: AwakeDuration
     @Published private(set) var customDurationMinutes: Int
+    @Published private(set) var shutdownUntil: Date?
+    @Published private(set) var quietShutdown: Bool
+    @Published private(set) var waitForOpenCode: Bool
+    @Published private(set) var openCodeMonitoringMode: OpenCodeMonitoringMode
+    @Published private(set) var openCodeShutdownArmed = false
 
     private let client: PowerSettingsClient
+    private let shutdownClient: ShutdownClient
     private let defaults: UserDefaults
     private let timedCancelPollInterval: TimeInterval
     private let timedCancelTimeout: TimeInterval
@@ -18,6 +24,11 @@ final class PowerSettingsStore: ObservableObject {
     private var tickTimer: Timer?
     private var didRequestExpiredSessionRefresh = false
     private var nextExpiredSessionRefreshAt: Date?
+    private var openCodeShutdownToken: String?
+    private var openCodeShutdownSeconds: Int?
+    private var openCodeShutdownQuiet = false
+    private var openCodeShutdownMode = OpenCodeMonitoringMode.firstTask
+    private var openCodeCompletionObserver: NSObjectProtocol?
 
     private enum DefaultsKey {
         static let selectedDuration = "selectedDuration"
@@ -25,6 +36,15 @@ final class PowerSettingsStore: ObservableObject {
         static let sessionToken = "sessionToken"
         static let sessionStartedAt = "sessionStartedAt"
         static let customDurationMinutes = "customDurationMinutes"
+        static let shutdownUntil = "shutdownUntil"
+        static let quietShutdown = "quietShutdown"
+        static let waitForOpenCode = "waitForOpenCode"
+        static let openCodeMonitoringMode = "openCodeMonitoringMode"
+        static let openCodeShutdownArmed = "openCodeShutdownArmed"
+        static let openCodeShutdownToken = "openCodeShutdownToken"
+        static let openCodeShutdownSeconds = "openCodeShutdownSeconds"
+        static let openCodeShutdownQuiet = "openCodeShutdownQuiet"
+        static let openCodeShutdownMode = "openCodeShutdownMode"
     }
 
     private static let defaultCustomDurationMinutes = 2 * 60
@@ -32,6 +52,7 @@ final class PowerSettingsStore: ObservableObject {
 
     init(
         client: PowerSettingsClient,
+        shutdownClient: ShutdownClient = .noop,
         defaults: UserDefaults = .standard,
         automaticallyTicks: Bool = false,
         tickInterval: TimeInterval = 1,
@@ -41,6 +62,7 @@ final class PowerSettingsStore: ObservableObject {
         expiredSessionRefreshInterval: TimeInterval = 5
     ) {
         self.client = client
+        self.shutdownClient = shutdownClient
         self.defaults = defaults
         self.timedCancelPollInterval = timedCancelPollInterval
         self.timedCancelTimeout = timedCancelTimeout
@@ -49,7 +71,47 @@ final class PowerSettingsStore: ObservableObject {
         customDurationMinutes = Self.clampCustomDurationMinutes(
             defaults.integer(forKey: DefaultsKey.customDurationMinutes)
         )
+        quietShutdown = defaults.bool(forKey: DefaultsKey.quietShutdown)
+        waitForOpenCode = defaults.bool(forKey: DefaultsKey.waitForOpenCode)
+        openCodeMonitoringMode = OpenCodeMonitoringMode(
+            storedValue: defaults.string(forKey: DefaultsKey.openCodeMonitoringMode)
+        )
         sessionToken = defaults.string(forKey: DefaultsKey.sessionToken)
+
+        if defaults.bool(forKey: DefaultsKey.openCodeShutdownArmed),
+           let storedToken = defaults.string(forKey: DefaultsKey.openCodeShutdownToken),
+           let storedSeconds = defaults.object(forKey: DefaultsKey.openCodeShutdownSeconds) as? Int,
+           (60...(24 * 60 * 60)).contains(storedSeconds),
+           storedSeconds.isMultiple(of: 60) {
+            openCodeShutdownArmed = true
+            openCodeShutdownToken = storedToken
+            openCodeShutdownSeconds = storedSeconds
+            openCodeShutdownQuiet = defaults.bool(forKey: DefaultsKey.openCodeShutdownQuiet)
+            openCodeShutdownMode = OpenCodeMonitoringMode(
+                storedValue: defaults.string(forKey: DefaultsKey.openCodeShutdownMode)
+            )
+        } else {
+            clearOpenCodeShutdownState()
+        }
+
+        openCodeCompletionObserver = NotificationCenter.default.addObserver(
+            forName: OpenCodeIntegration.completionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let url = notification.object as? URL else {
+                return
+            }
+            self?.handleOpenCodeCompletion(url)
+        }
+
+        shutdownUntil = nil
+        let storedShutdownUntil = defaults.double(forKey: DefaultsKey.shutdownUntil)
+        if storedShutdownUntil > Date().timeIntervalSince1970 {
+            shutdownUntil = Date(timeIntervalSince1970: storedShutdownUntil)
+        } else if storedShutdownUntil > 0 {
+            defaults.removeObject(forKey: DefaultsKey.shutdownUntil)
+        }
 
         let storedActiveUntil = defaults.double(forKey: DefaultsKey.activeUntil)
         if storedActiveUntil > 0 {
@@ -68,6 +130,9 @@ final class PowerSettingsStore: ObservableObject {
 
     deinit {
         tickTimer?.invalidate()
+        if let openCodeCompletionObserver {
+            NotificationCenter.default.removeObserver(openCodeCompletionObserver)
+        }
     }
 
     var customDurationLabel: String {
@@ -228,6 +293,18 @@ final class PowerSettingsStore: ObservableObject {
         }
     }
 
+    var shutdownSessionValue: String? {
+        guard let shutdownUntil else {
+            return nil
+        }
+
+        return Self.formatRemaining(shutdownUntil.timeIntervalSinceNow)
+    }
+
+    var activeOpenCodeMonitoringMode: OpenCodeMonitoringMode {
+        openCodeShutdownArmed ? openCodeShutdownMode : openCodeMonitoringMode
+    }
+
     func refresh() {
         refresh(onFailure: nil)
     }
@@ -314,6 +391,44 @@ final class PowerSettingsStore: ObservableObject {
         }
     }
 
+    func scheduleShutdown(duration: AwakeDuration) {
+        guard duration != .indefinite,
+              let seconds = duration.seconds(customMinutes: customDurationMinutes) else {
+            return
+        }
+
+        if waitForOpenCode {
+            armOpenCodeShutdown(after: seconds)
+        } else {
+            scheduleShutdown(after: seconds)
+        }
+    }
+
+    func scheduleShutdown(minutes: Int) {
+        let clampedMinutes = min(max(minutes, customDurationBounds.lowerBound), customDurationBounds.upperBound)
+        setCustomDurationMinutes(clampedMinutes)
+        if waitForOpenCode {
+            armOpenCodeShutdown(after: clampedMinutes * 60)
+        } else {
+            scheduleShutdown(after: clampedMinutes * 60)
+        }
+    }
+
+    func cancelShutdown() {
+        guard shutdownUntil != nil else {
+            return
+        }
+
+        runShutdownWork(
+            successMessage: "Shutdown canceled.",
+            failureTitle: "Could Not Cancel Shutdown",
+            operation: { [shutdownClient] in
+                try shutdownClient.cancel()
+                return ShutdownUpdate(shutdownUntil: nil)
+            }
+        )
+    }
+
     func performPrimaryAction() {
         if case .unknown = snapshot.sleepSetting {
             refresh()
@@ -333,9 +448,39 @@ final class PowerSettingsStore: ObservableObject {
         defaults.set(clampedMinutes, forKey: DefaultsKey.customDurationMinutes)
     }
 
+    func setQuietShutdown(_ quiet: Bool) {
+        quietShutdown = quiet
+        defaults.set(quiet, forKey: DefaultsKey.quietShutdown)
+    }
+
+    func setWaitForOpenCode(_ wait: Bool) {
+        waitForOpenCode = wait
+        defaults.set(wait, forKey: DefaultsKey.waitForOpenCode)
+    }
+
+    func setOpenCodeMonitoringMode(_ mode: OpenCodeMonitoringMode) {
+        openCodeMonitoringMode = mode
+        defaults.set(mode.rawValue, forKey: DefaultsKey.openCodeMonitoringMode)
+    }
+
+    func cancelOpenCodeShutdown() {
+        guard openCodeShutdownArmed else {
+            return
+        }
+
+        OpenCodeIntegration.disarm()
+        clearOpenCodeShutdownState()
+        statusMessage = "OpenCode shutdown canceled."
+    }
+
     func tick() {
-        if activeUntil != nil, snapshot.sleepSetting.isDisabled {
+        if (activeUntil != nil && snapshot.sleepSetting.isDisabled) || shutdownUntil != nil {
             objectWillChange.send()
+        }
+
+        if let shutdownUntil, shutdownUntil <= Date() {
+            self.shutdownUntil = nil
+            defaults.removeObject(forKey: DefaultsKey.shutdownUntil)
         }
 
         if let activeUntil,
@@ -396,6 +541,127 @@ final class PowerSettingsStore: ObservableObject {
         }
         tickTimer = timer
         RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func scheduleShutdown(after seconds: Int) {
+        scheduleShutdown(after: seconds, quiet: quietShutdown)
+    }
+
+    private func scheduleShutdown(
+        after seconds: Int,
+        quiet: Bool,
+        successMessage: String? = nil
+    ) {
+        runShutdownWork(
+            successMessage: successMessage,
+            failureTitle: "Could Not Schedule Shutdown",
+            operation: { [shutdownClient] in
+                try shutdownClient.schedule(seconds, quiet)
+                return ShutdownUpdate(
+                    shutdownUntil: Date().addingTimeInterval(TimeInterval(seconds))
+                )
+            }
+        )
+    }
+
+    private func armOpenCodeShutdown(after seconds: Int) {
+        guard !openCodeShutdownArmed else {
+            return
+        }
+
+        do {
+            let mode = openCodeMonitoringMode
+            let token = try OpenCodeIntegration.arm(mode: mode)
+            openCodeShutdownToken = token
+            openCodeShutdownSeconds = seconds
+            openCodeShutdownQuiet = quietShutdown
+            openCodeShutdownMode = mode
+            openCodeShutdownArmed = true
+            defaults.set(true, forKey: DefaultsKey.openCodeShutdownArmed)
+            defaults.set(token, forKey: DefaultsKey.openCodeShutdownToken)
+            defaults.set(seconds, forKey: DefaultsKey.openCodeShutdownSeconds)
+            defaults.set(openCodeShutdownQuiet, forKey: DefaultsKey.openCodeShutdownQuiet)
+            defaults.set(mode.rawValue, forKey: DefaultsKey.openCodeShutdownMode)
+            statusMessage = "Waiting for OpenCode to finish."
+        } catch {
+            alert = UtilityAlert(
+                title: "Could Not Watch OpenCode",
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func handleOpenCodeCompletion(_ url: URL) {
+        guard let completion = OpenCodeIntegration.completion(from: url),
+              openCodeShutdownArmed,
+              completion.token == openCodeShutdownToken,
+              let seconds = openCodeShutdownSeconds else {
+            return
+        }
+
+        let quiet = openCodeShutdownQuiet
+        OpenCodeIntegration.disarm()
+        clearOpenCodeShutdownState()
+        scheduleShutdown(
+            after: seconds,
+            quiet: quiet,
+            successMessage: "OpenCode finished. Shutdown scheduled."
+        )
+    }
+
+    private func clearOpenCodeShutdownState() {
+        openCodeShutdownArmed = false
+        openCodeShutdownToken = nil
+        openCodeShutdownSeconds = nil
+        openCodeShutdownQuiet = false
+        openCodeShutdownMode = .firstTask
+        defaults.removeObject(forKey: DefaultsKey.openCodeShutdownArmed)
+        defaults.removeObject(forKey: DefaultsKey.openCodeShutdownToken)
+        defaults.removeObject(forKey: DefaultsKey.openCodeShutdownSeconds)
+        defaults.removeObject(forKey: DefaultsKey.openCodeShutdownQuiet)
+        defaults.removeObject(forKey: DefaultsKey.openCodeShutdownMode)
+    }
+
+    private func runShutdownWork(
+        successMessage: String?,
+        failureTitle: String,
+        operation: @escaping () throws -> ShutdownUpdate
+    ) {
+        guard !isWorking else {
+            return
+        }
+
+        isWorking = true
+        statusMessage = nil
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result { try operation() }
+
+            DispatchQueue.main.async {
+                self.isWorking = false
+
+                switch result {
+                case let .success(update):
+                    self.shutdownUntil = update.shutdownUntil
+                    if let shutdownUntil = update.shutdownUntil {
+                        self.defaults.set(
+                            shutdownUntil.timeIntervalSince1970,
+                            forKey: DefaultsKey.shutdownUntil
+                        )
+                    } else {
+                        self.defaults.removeObject(forKey: DefaultsKey.shutdownUntil)
+                    }
+                    self.statusMessage = successMessage
+                case let .failure(error):
+                    if let shutdownError = error as? ShutdownClientError,
+                       shutdownError == .userCancelled {
+                        self.statusMessage = "Canceled."
+                        return
+                    }
+                    self.alert = UtilityAlert(title: failureTitle, message: error.localizedDescription)
+                }
+            }
+        }
     }
 
     private func runWork(
@@ -547,6 +813,10 @@ private struct StoreUpdate {
     let snapshot: PowerSettingsSnapshot
     let sessionMutation: SessionMutation
     var statusMessage: String? = nil
+}
+
+private struct ShutdownUpdate {
+    let shutdownUntil: Date?
 }
 
 private enum SessionMutation {

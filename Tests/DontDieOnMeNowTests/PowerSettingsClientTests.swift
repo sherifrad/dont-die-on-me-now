@@ -107,8 +107,69 @@ final class PowerSettingsClientTests: XCTestCase {
         XCTAssertTrue(request.contents.contains("seconds=3600\n"))
         XCTAssertTrue(request.contents.contains("token=token-1\n"))
         XCTAssertTrue(request.contents.contains("cancel_file=/Users/dev/Library/Application Support/DontDieOnMeNow/timed-cancel\n"))
+        XCTAssertTrue(request.contents.contains("quiet_shutdown=0\n"))
         XCTAssertFalse(request.contents.contains("/usr/bin/pmset"))
         XCTAssertFalse(request.contents.contains("do shell script"))
+    }
+
+    func testPrivilegedHelperRequestSchedulesAndCancelsShutdown() throws {
+        let schedule = try PrivilegedHelperRequest.validated(
+            action: .scheduleShutdown,
+            timedRestore: nil,
+            sessionToken: nil,
+            shutdownSeconds: 3_600
+        )
+        let cancel = try PrivilegedHelperRequest.validated(
+            action: .cancelShutdown,
+            timedRestore: nil,
+            sessionToken: nil
+        )
+
+        XCTAssertTrue(schedule.contents.contains("action=schedule_shutdown\n"))
+        XCTAssertTrue(schedule.contents.contains("seconds=3600\n"))
+        XCTAssertTrue(cancel.contents.contains("action=cancel_shutdown\n"))
+        XCTAssertTrue(cancel.contents.contains("seconds=0\n"))
+        XCTAssertFalse(schedule.contents.contains("/sbin/shutdown"))
+    }
+
+    func testPrivilegedHelperRequestRejectsUnsafeShutdownDurations() {
+        XCTAssertThrowsError(
+            try PrivilegedHelperRequest.validated(
+                action: .scheduleShutdown,
+                timedRestore: nil,
+                sessionToken: nil,
+                shutdownSeconds: 59
+            )
+        )
+        XCTAssertThrowsError(
+            try PrivilegedHelperRequest.validated(
+                action: .scheduleShutdown,
+                timedRestore: nil,
+                sessionToken: nil,
+                shutdownSeconds: 3_601
+            )
+        )
+        XCTAssertThrowsError(
+            try PrivilegedHelperRequest.validated(
+                action: .scheduleShutdown,
+                timedRestore: nil,
+                sessionToken: nil,
+                shutdownSeconds: 86_460
+            )
+        )
+    }
+
+    func testShutdownFallbackCommandsUseFixedExecutables() throws {
+        let schedule = PrivilegedPowerCommand.appleScriptToScheduleShutdown(after: 7_200)
+        let quietSchedule = PrivilegedPowerCommand.appleScriptToScheduleShutdown(after: 7_200, quiet: true)
+        let cancel = PrivilegedPowerCommand.appleScriptToCancelShutdown()
+
+        XCTAssertTrue(schedule.contains("/sbin/shutdown -h +120"))
+        XCTAssertTrue(quietSchedule.contains("/sbin/shutdown -h -q +120"))
+        XCTAssertTrue(cancel.contains("/sbin/shutdown -c"))
+        try assertValidAppleScriptSyntax(schedule)
+        try assertValidAppleScriptSyntax(quietSchedule)
+        try assertValidAppleScriptSyntax(cancel)
     }
 
     func testPrivilegedHelperRequestRejectsUnsafeValues() {
@@ -327,6 +388,18 @@ final class PowerSettingsClientTests: XCTestCase {
         XCTAssertEqual(AwakeDuration.twoHours.seconds, 7_200)
         XCTAssertEqual(AwakeDuration.twoHours.label, "2 hours")
         XCTAssertEqual(AwakeDuration.twoHours.actionLabel(customLabel: "ignored"), "Keep Awake 2 hours")
+    }
+
+    func testOpenCodeCompletionPreservesSessionID() throws {
+        let url = try XCTUnwrap(
+            URL(string: "dont-die-on-me-now://opencode-finished?token=token-1&session=session-1&outcome=success")
+        )
+
+        let completion = try XCTUnwrap(OpenCodeIntegration.completion(from: url))
+
+        XCTAssertEqual(completion.token, "token-1")
+        XCTAssertEqual(completion.sessionID, "session-1")
+        XCTAssertEqual(completion.outcome, "success")
     }
 
     private func assertValidShellSyntax(_ command: String) throws {

@@ -3,6 +3,8 @@ import Foundation
 enum PrivilegedHelperAction: String {
     case start
     case stop
+    case scheduleShutdown = "schedule_shutdown"
+    case cancelShutdown = "cancel_shutdown"
 }
 
 struct PrivilegedHelperRequest: Equatable {
@@ -10,12 +12,16 @@ struct PrivilegedHelperRequest: Equatable {
     let action: PrivilegedHelperAction
     let timedRestore: TimedRestore?
     let sessionToken: String?
+    let shutdownSeconds: Int?
+    let quietShutdown: Bool
 
     static func validated(
         requestID: String = UUID().uuidString,
         action: PrivilegedHelperAction,
         timedRestore: TimedRestore?,
-        sessionToken: String?
+        sessionToken: String?,
+        shutdownSeconds: Int? = nil,
+        quietShutdown: Bool = false
     ) throws -> PrivilegedHelperRequest {
         guard isSafeIdentifier(requestID, maximumLength: 80) else {
             throw PrivilegedHelperClientError.invalidRequest("Invalid helper request id.")
@@ -41,17 +47,41 @@ struct PrivilegedHelperRequest: Equatable {
             }
         }
 
+        if let shutdownSeconds {
+            guard (60...(24 * 60 * 60)).contains(shutdownSeconds),
+                  shutdownSeconds.isMultiple(of: 60) else {
+                throw PrivilegedHelperClientError.invalidRequest("Invalid shutdown duration.")
+            }
+        }
+
+        switch action {
+        case .scheduleShutdown:
+            guard timedRestore == nil, sessionToken == nil, shutdownSeconds != nil else {
+                throw PrivilegedHelperClientError.invalidRequest("Invalid shutdown request.")
+            }
+        case .cancelShutdown:
+            guard timedRestore == nil, sessionToken == nil, shutdownSeconds == nil, !quietShutdown else {
+                throw PrivilegedHelperClientError.invalidRequest("Invalid shutdown cancellation request.")
+            }
+        case .start, .stop:
+            guard shutdownSeconds == nil, !quietShutdown else {
+                throw PrivilegedHelperClientError.invalidRequest("Invalid sleep request.")
+            }
+        }
+
         return PrivilegedHelperRequest(
             uncheckedRequestID: requestID,
             action: action,
             timedRestore: timedRestore,
-            sessionToken: sessionToken
+            sessionToken: sessionToken,
+            shutdownSeconds: shutdownSeconds,
+            quietShutdown: quietShutdown
         )
     }
 
     var contents: String {
         let token = timedRestore?.token ?? sessionToken ?? "off"
-        let seconds = timedRestore?.seconds ?? 0
+        let seconds = timedRestore?.seconds ?? shutdownSeconds ?? 0
         let cancelFilePath = timedRestore?.cancelFilePath ?? ""
 
         return [
@@ -60,6 +90,7 @@ struct PrivilegedHelperRequest: Equatable {
             "seconds=\(seconds)",
             "token=\(token)",
             "cancel_file=\(cancelFilePath)",
+            "quiet_shutdown=\(quietShutdown ? 1 : 0)",
         ].joined(separator: "\n") + "\n"
     }
 
@@ -67,12 +98,16 @@ struct PrivilegedHelperRequest: Equatable {
         uncheckedRequestID: String,
         action: PrivilegedHelperAction,
         timedRestore: TimedRestore?,
-        sessionToken: String?
+        sessionToken: String?,
+        shutdownSeconds: Int?,
+        quietShutdown: Bool
     ) {
         self.requestID = uncheckedRequestID
         self.action = action
         self.timedRestore = timedRestore
         self.sessionToken = sessionToken
+        self.shutdownSeconds = shutdownSeconds
+        self.quietShutdown = quietShutdown
     }
 
     private static func isSafeIdentifier(_ value: String, maximumLength: Int) -> Bool {
@@ -147,6 +182,28 @@ struct PrivilegedHelperClient {
             action: disabled ? .start : .stop,
             timedRestore: disabled ? timedRestore : nil,
             sessionToken: disabled ? sessionToken : "off"
+        )
+
+        try send(request)
+    }
+
+    func scheduleShutdown(after seconds: Int, quiet: Bool) throws {
+        let request = try PrivilegedHelperRequest.validated(
+            action: .scheduleShutdown,
+            timedRestore: nil,
+            sessionToken: nil,
+            shutdownSeconds: seconds,
+            quietShutdown: quiet
+        )
+
+        try send(request)
+    }
+
+    func cancelScheduledShutdown() throws {
+        let request = try PrivilegedHelperRequest.validated(
+            action: .cancelShutdown,
+            timedRestore: nil,
+            sessionToken: nil
         )
 
         try send(request)

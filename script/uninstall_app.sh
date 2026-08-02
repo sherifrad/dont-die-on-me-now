@@ -70,6 +70,7 @@ fi
 
 "$ROOT_DIR/script/uninstall_login_launcher.sh"
 "$ROOT_DIR/script/uninstall_privileged_helper.sh"
+/bin/bash "$ROOT_DIR/script/uninstall_opencode_plugin.sh"
 /usr/bin/pkill -x "$APP_PROCESS_NAME" >/dev/null 2>&1 || true
 
 if [ -L "$DESKTOP_SHORTCUT" ]; then

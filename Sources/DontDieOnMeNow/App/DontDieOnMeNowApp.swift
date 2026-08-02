@@ -1,9 +1,19 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where OpenCodeIntegration.completion(from: url) != nil {
+            NotificationCenter.default.post(
+                name: OpenCodeIntegration.completionNotification,
+                object: url
+            )
+        }
     }
 }
 
@@ -12,6 +22,7 @@ struct DontDieOnMeNowApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = PowerSettingsStore(
         client: .live,
+        shutdownClient: .live,
         automaticallyTicks: true,
         refreshOnStart: true
     )

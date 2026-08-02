@@ -2,7 +2,7 @@
 set -euo pipefail
 
 LABEL="com.josh.DontDieOnMeNow.helper"
-HELPER_VERSION="8"
+HELPER_VERSION="10"
 ROOT_DIR="/Library/Application Support/DontDieOnMeNow"
 CONFIG_FILE="$ROOT_DIR/helper.conf"
 RESTORE_LABEL="com.josh.DontDieOnMeNow.restore"
@@ -269,6 +269,22 @@ stop_awake() {
   /bin/rm -f "$SESSION_FILE" "$DEADLINE_FILE" "$DEADLINE_TEMP_FILE"
 }
 
+schedule_shutdown() {
+  local seconds="$1"
+  local quiet="$2"
+  local minutes=$((seconds / 60))
+
+  if [ "$quiet" = "1" ]; then
+    /sbin/shutdown -h -q "+$minutes"
+  else
+    /sbin/shutdown -h "+$minutes"
+  fi
+}
+
+cancel_shutdown() {
+  /sbin/shutdown -c
+}
+
 restore_expired_deadline() {
   local deadline
   local now
@@ -306,6 +322,7 @@ process_request() {
   local seconds
   local token
   local cancel_file
+  local quiet_shutdown
 
   if [ ! -e "$REQUEST_DIR/request" ]; then
     return 0
@@ -327,6 +344,10 @@ process_request() {
   seconds="$(read_request_value seconds)"
   token="$(read_request_value token)"
   cancel_file="$(read_request_value cancel_file)"
+  quiet_shutdown="$(read_request_value quiet_shutdown)"
+  if [ -z "$quiet_shutdown" ]; then
+    quiet_shutdown=0
+  fi
   last_request_id="$(/bin/cat "$LAST_REQUEST_FILE" 2>/dev/null || true)"
 
   if [ "$request_id" = "$last_request_id" ]; then
@@ -359,6 +380,15 @@ process_request() {
     return 0
   fi
 
+  case "$quiet_shutdown" in
+    0|1) ;;
+    *)
+      write_response "$request_id" "error" "Invalid quiet shutdown setting."
+      echo "$request_id" > "$LAST_REQUEST_FILE"
+      return 0
+      ;;
+  esac
+
   case "$action" in
     start)
       if ! is_safe_path "$cancel_file"; then
@@ -377,6 +407,25 @@ process_request() {
         write_response "$request_id" "ok" "Stopped."
       else
         write_response "$request_id" "error" "Could not stop awake mode."
+      fi
+      ;;
+    schedule_shutdown)
+      if [ "$seconds" -lt 60 ] || [ "$seconds" -gt 86400 ] || [ "$((seconds % 60))" -ne 0 ]; then
+        write_response "$request_id" "error" "Shutdown duration must be between 1 minute and 24 hours."
+        echo "$request_id" > "$LAST_REQUEST_FILE"
+        return 0
+      fi
+      if schedule_shutdown "$seconds" "$quiet_shutdown"; then
+        write_response "$request_id" "ok" "Shutdown scheduled."
+      else
+        write_response "$request_id" "error" "Could not schedule shutdown."
+      fi
+      ;;
+    cancel_shutdown)
+      if cancel_shutdown; then
+        write_response "$request_id" "ok" "Shutdown canceled."
+      else
+        write_response "$request_id" "error" "Could not cancel shutdown."
       fi
       ;;
     *)
