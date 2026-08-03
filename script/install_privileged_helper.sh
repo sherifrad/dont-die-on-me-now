@@ -2,7 +2,7 @@
 set -euo pipefail
 
 LABEL="com.josh.DontDieOnMeNow.helper"
-HELPER_VERSION="10"
+HELPER_VERSION="11"
 ROOT_DIR="/Library/Application Support/DontDieOnMeNow"
 HELPER_PATH="$ROOT_DIR/privileged_helper.sh"
 CONFIG_PATH="$ROOT_DIR/helper.conf"

@@ -275,11 +275,10 @@ struct MenuBarView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
         }
-        .keyboardShortcut(.defaultAction)
         .buttonStyle(.borderedProminent)
         .tint(isStopAction ? .red : .accentColor)
         .controlSize(.large)
-        .disabled(store.isWorking && (!isStopAction || store.isStopping))
+        .disabled(store.isWorking)
     }
 
     private var shutdownSection: some View {
