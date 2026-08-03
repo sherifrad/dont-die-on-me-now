@@ -3,6 +3,7 @@ import Foundation
 final class PowerSettingsStore: ObservableObject {
     @Published private(set) var snapshot: PowerSettingsSnapshot = .unknown
     @Published private(set) var isWorking = false
+    @Published private(set) var isStopping = false
     @Published var alert: UtilityAlert?
     @Published private(set) var statusMessage: String?
     @Published private(set) var activeUntil: Date?
@@ -22,6 +23,7 @@ final class PowerSettingsStore: ObservableObject {
     private let expiredSessionRefreshInterval: TimeInterval
     private var sessionToken: String?
     private var tickTimer: Timer?
+    private var workGeneration = 0
     private var didRequestExpiredSessionRefresh = false
     private var nextExpiredSessionRefreshAt: Date?
     private var openCodeShutdownToken: String?
@@ -359,36 +361,47 @@ final class PowerSettingsStore: ObservableObject {
     }
 
     func restoreSleep() {
+        guard !isStopping else {
+            return
+        }
+
         let timedSessionToken = activeUntil == nil ? nil : sessionToken
         let timedCancelPollInterval = timedCancelPollInterval
         let timedCancelTimeout = timedCancelTimeout
+        let stopRequested = snapshot.sleepSetting.isDisabled
+        isStopping = stopRequested
 
-        runWork(successMessage: "Stopped. Normal sleep is on.") { [client] in
-            if let timedSessionToken,
-               let snapshot = Self.restoreTimedSessionWithoutPrivilegeIfPossible(
-                token: timedSessionToken,
-                client: client,
-                timeout: timedCancelTimeout,
-                pollInterval: timedCancelPollInterval
-               ) {
+        runWork(
+            successMessage: "Stopped. Normal sleep is on.",
+            operation: { [client] in
+                if let timedSessionToken,
+                   let snapshot = Self.restoreTimedSessionWithoutPrivilegeIfPossible(
+                    token: timedSessionToken,
+                    client: client,
+                    timeout: timedCancelTimeout,
+                    pollInterval: timedCancelPollInterval
+                   ) {
+                    return StoreUpdate(
+                        snapshot: snapshot,
+                        sessionMutation: .clear,
+                        statusMessage: "Stopped. Normal sleep is on."
+                    )
+                }
+
+                try client.setSleepDisabled(false, nil, "off")
+                let snapshot = try client.readSnapshot()
+                guard !snapshot.sleepSetting.isDisabled else {
+                    throw PowerSettingsStoreError.verificationFailed(expectedDisabled: false)
+                }
                 return StoreUpdate(
                     snapshot: snapshot,
                     sessionMutation: .clear,
                     statusMessage: "Stopped. Normal sleep is on."
                 )
-            }
-
-            try client.setSleepDisabled(false, nil, "off")
-            let snapshot = try client.readSnapshot()
-            guard !snapshot.sleepSetting.isDisabled else {
-                throw PowerSettingsStoreError.verificationFailed(expectedDisabled: false)
-            }
-            return StoreUpdate(
-                snapshot: snapshot,
-                sessionMutation: .clear,
-                statusMessage: "Stopped. Normal sleep is on."
-            )
-        }
+            },
+            replacingCurrentWork: stopRequested,
+            clearsStopping: stopRequested
+        )
     }
 
     func scheduleShutdown(duration: AwakeDuration) {
@@ -627,17 +640,18 @@ final class PowerSettingsStore: ObservableObject {
         failureTitle: String,
         operation: @escaping () throws -> ShutdownUpdate
     ) {
-        guard !isWorking else {
+        guard let workID = beginWork() else {
             return
         }
-
-        isWorking = true
-        statusMessage = nil
 
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Result { try operation() }
 
             DispatchQueue.main.async {
+                guard self.workGeneration == workID else {
+                    return
+                }
+
                 self.isWorking = false
 
                 switch result {
@@ -667,20 +681,26 @@ final class PowerSettingsStore: ObservableObject {
     private func runWork(
         successMessage: String?,
         operation: @escaping () throws -> StoreUpdate,
-        onFailure: ((Error) -> Bool)? = nil
+        onFailure: ((Error) -> Bool)? = nil,
+        replacingCurrentWork: Bool = false,
+        clearsStopping: Bool = false
     ) {
-        guard !isWorking else {
+        guard let workID = beginWork(replacingCurrentWork: replacingCurrentWork) else {
             return
         }
-
-        isWorking = true
-        statusMessage = nil
 
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Result { try operation() }
 
             DispatchQueue.main.async {
+                guard self.workGeneration == workID else {
+                    return
+                }
+
                 self.isWorking = false
+                if clearsStopping {
+                    self.isStopping = false
+                }
 
                 switch result {
                 case let .success(update):
@@ -703,6 +723,17 @@ final class PowerSettingsStore: ObservableObject {
                 }
             }
         }
+    }
+
+    private func beginWork(replacingCurrentWork: Bool = false) -> Int? {
+        guard replacingCurrentWork || !isWorking else {
+            return nil
+        }
+
+        workGeneration += 1
+        isWorking = true
+        statusMessage = nil
+        return workGeneration
     }
 
     private func apply(_ mutation: SessionMutation, snapshot: PowerSettingsSnapshot) {

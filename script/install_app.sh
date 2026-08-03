@@ -3,6 +3,7 @@ set -euo pipefail
 
 APP_DISPLAY_NAME="Don't Die On Me Now"
 APP_PROCESS_NAME="DontDieOnMeNow"
+BUNDLE_ID="com.josh.DontDieOnMeNow"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_APP="$ROOT_DIR/dist/$APP_DISPLAY_NAME.app"
 INSTALL_DIR="$HOME/Applications"
@@ -86,6 +87,20 @@ done
 
 APP_PATH="$INSTALL_DIR/$APP_DISPLAY_NAME.app"
 
+duplicate_app_paths() {
+  local paths=(
+    "$HOME/Applications/$APP_DISPLAY_NAME.app"
+    "/Applications/$APP_DISPLAY_NAME.app"
+    "$ROOT_DIR/dist/$APP_DISPLAY_NAME.app"
+  )
+
+  if [ -n "${CUSTOM_INSTALL_DIR:-}" ]; then
+    paths+=("$CUSTOM_INSTALL_DIR/$APP_DISPLAY_NAME.app")
+  fi
+
+  printf '%s\n' "${paths[@]}"
+}
+
 case "$INSTALL_DIR" in
   /*) ;;
   *)
@@ -118,6 +133,37 @@ copy_app() {
   fi
 }
 
+remove_duplicate_apps() {
+  local app_path
+  local bundle_id
+
+  while IFS= read -r app_path; do
+    if [ "$app_path" = "$APP_PATH" ] || [ ! -e "$app_path" ]; then
+      continue
+    fi
+
+    bundle_id="$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$app_path/Contents/Info.plist" 2>/dev/null || true)"
+    if [ "$bundle_id" != "$BUNDLE_ID" ]; then
+      echo "Leaving unrelated app bundle in place: $app_path"
+      continue
+    fi
+
+    if [ -x "$LSREGISTER" ]; then
+      "$LSREGISTER" -u "$app_path" >/dev/null 2>&1 || true
+    fi
+
+    case "$app_path" in
+      /Applications/*)
+        /usr/bin/sudo /bin/rm -rf "$app_path"
+        ;;
+      *)
+        /bin/rm -rf "$app_path"
+        ;;
+    esac
+    echo "Removed duplicate app: $app_path"
+  done < <(duplicate_app_paths)
+}
+
 register_app() {
   if [ -x "$LSREGISTER" ]; then
     "$LSREGISTER" -f "$APP_PATH" >/dev/null 2>&1 || true
@@ -134,7 +180,9 @@ if [ ! -d "$DIST_APP" ]; then
   exit 1
 fi
 
+/usr/bin/pkill -x "$APP_PROCESS_NAME" >/dev/null 2>&1 || true
 copy_app
+remove_duplicate_apps
 /usr/bin/codesign --verify --deep --strict "$APP_PATH" >/dev/null
 register_app
 
@@ -153,7 +201,6 @@ else
 fi
 
 if [ "$LAUNCH_APP" -eq 1 ]; then
-  /usr/bin/pkill -x "$APP_PROCESS_NAME" >/dev/null 2>&1 || true
   /usr/bin/open "$APP_PATH"
 fi
 

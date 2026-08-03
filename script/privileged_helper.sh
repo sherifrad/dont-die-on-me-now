@@ -2,7 +2,7 @@
 set -euo pipefail
 
 LABEL="com.josh.DontDieOnMeNow.helper"
-HELPER_VERSION="10"
+HELPER_VERSION="11"
 ROOT_DIR="/Library/Application Support/DontDieOnMeNow"
 CONFIG_FILE="$ROOT_DIR/helper.conf"
 RESTORE_LABEL="com.josh.DontDieOnMeNow.restore"
@@ -274,6 +274,7 @@ schedule_shutdown() {
   local quiet="$2"
   local minutes=$((seconds / 60))
 
+  /sbin/shutdown -c >/dev/null 2>&1 || true
   if [ "$quiet" = "1" ]; then
     /sbin/shutdown -h -q "+$minutes"
   else

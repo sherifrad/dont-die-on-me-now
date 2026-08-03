@@ -63,6 +63,7 @@ fi
 APP_PATHS=(
   "$HOME/Applications/$APP_DISPLAY_NAME.app"
   "/Applications/$APP_DISPLAY_NAME.app"
+  "$ROOT_DIR/dist/$APP_DISPLAY_NAME.app"
 )
 if [ -n "$CUSTOM_INSTALL_DIR" ]; then
   APP_PATHS+=("$CUSTOM_INSTALL_DIR/$APP_DISPLAY_NAME.app")

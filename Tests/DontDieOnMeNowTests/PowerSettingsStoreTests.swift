@@ -912,6 +912,66 @@ final class PowerSettingsStoreTests: XCTestCase {
         wait(for: [expectation], timeout: 1)
     }
 
+    func testStopSupersedesAnInFlightRefresh() {
+        let refreshStarted = expectation(description: "refresh starts")
+        let stopCompletes = expectation(description: "stop completes")
+        let releaseRefresh = DispatchSemaphore(value: 0)
+        let stateLock = NSLock()
+        var readCount = 0
+        var cancellationRequested = false
+        let client = PowerSettingsClient(
+            readSnapshot: {
+                stateLock.lock()
+                readCount += 1
+                let shouldBlock = readCount == 1
+                let isCanceled = cancellationRequested
+                stateLock.unlock()
+
+                if shouldBlock {
+                    refreshStarted.fulfill()
+                    releaseRefresh.wait()
+                }
+
+                return PowerSettingsSnapshot(
+                    sleepSetting: isCanceled ? .normal : .disabled,
+                    rawOutput: isCanceled ? "SleepDisabled 0" : "SleepDisabled 1"
+                )
+            },
+            setSleepDisabled: { _, _, _ in },
+            requestTimedRestoreCancellation: { _ in
+                stateLock.lock()
+                cancellationRequested = true
+                stateLock.unlock()
+            }
+        )
+        let defaults = makeDefaults()
+        defaults.set(Date().addingTimeInterval(1_000).timeIntervalSince1970, forKey: "activeUntil")
+        defaults.set("old-token", forKey: "sessionToken")
+        let store = PowerSettingsStore(
+            client: client,
+            defaults: defaults,
+            timedCancelPollInterval: 0.001,
+            timedCancelTimeout: 0.05
+        )
+        defer { releaseRefresh.signal() }
+
+        store.refresh()
+        wait(for: [refreshStarted], timeout: 1)
+        XCTAssertTrue(store.isWorking)
+
+        store.restoreSleep()
+        XCTAssertTrue(store.isStopping)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) {
+            XCTAssertFalse(store.isWorking)
+            XCTAssertFalse(store.isStopping)
+            XCTAssertEqual(store.snapshot.sleepSetting, .normal)
+            stopCompletes.fulfill()
+        }
+
+        wait(for: [stopCompletes], timeout: 1)
+    }
+
     private func alphaBounds(of image: NSImage) throws -> CGRect {
         let data = try XCTUnwrap(image.tiffRepresentation)
         let representation = try XCTUnwrap(NSBitmapImageRep(data: data))

@@ -48,6 +48,7 @@ BUILD_BINARY="$(swift build "${BUILD_ARGUMENTS[@]}" --show-bin-path)/$APP_NAME"
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
+touch "$DIST_DIR/.metadata_never_index"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 /usr/bin/lipo "$APP_BINARY" -verify_arch "${BUILD_ARCHITECTURES[@]}"

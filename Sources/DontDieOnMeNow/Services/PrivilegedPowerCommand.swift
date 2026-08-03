@@ -34,7 +34,7 @@ enum PrivilegedPowerCommand {
 
     static func shellCommandToScheduleShutdown(after seconds: Int, quiet: Bool = false) -> String {
         let quietFlag = quiet ? " -q" : ""
-        return "/sbin/shutdown -h\(quietFlag) +\(seconds / 60)"
+        return "/sbin/shutdown -c >/dev/null 2>&1 || true; /sbin/shutdown -h\(quietFlag) +\(seconds / 60)"
     }
 
     static func shellCommand(

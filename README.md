@@ -30,7 +30,7 @@ cd dont-die-on-me-now
 ./install.sh
 ```
 
-The installer puts the app in `~/Applications` and installs a narrow privileged helper. macOS shows one standard administrator dialog during setup. After that, starting and stopping awake mode should not require another password.
+The installer puts the app in `~/Applications` and installs a narrow privileged helper. macOS shows one standard administrator dialog during setup. After that, starting and stopping awake mode should not require another password. Reinstalling removes older copies from the other standard install location and the local build output so Finder keeps one app entry.
 
 The installer also installs a small OpenCode plugin at `~/.config/opencode/plugins/dont-die-on-me-now.js`. Use `--no-opencode` to skip that integration.
 

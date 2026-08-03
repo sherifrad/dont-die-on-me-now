@@ -129,6 +129,14 @@ final class PowerSettingsClientTests: XCTestCase {
         XCTAssertTrue(schedule.contents.contains("seconds=3600\n"))
         XCTAssertTrue(cancel.contents.contains("action=cancel_shutdown\n"))
         XCTAssertTrue(cancel.contents.contains("seconds=0\n"))
+        let quietSchedule = try PrivilegedHelperRequest.validated(
+            action: .scheduleShutdown,
+            timedRestore: nil,
+            sessionToken: nil,
+            shutdownSeconds: 3_600,
+            quietShutdown: true
+        )
+        XCTAssertTrue(quietSchedule.contents.contains("quiet_shutdown=1\n"))
         XCTAssertFalse(schedule.contents.contains("/sbin/shutdown"))
     }
 
@@ -166,6 +174,7 @@ final class PowerSettingsClientTests: XCTestCase {
 
         XCTAssertTrue(schedule.contains("/sbin/shutdown -h +120"))
         XCTAssertTrue(quietSchedule.contains("/sbin/shutdown -h -q +120"))
+        XCTAssertTrue(quietSchedule.contains("/sbin/shutdown -c"))
         XCTAssertTrue(cancel.contains("/sbin/shutdown -c"))
         try assertValidAppleScriptSyntax(schedule)
         try assertValidAppleScriptSyntax(quietSchedule)

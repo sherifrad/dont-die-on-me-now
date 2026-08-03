@@ -279,7 +279,7 @@ struct MenuBarView: View {
         .buttonStyle(.borderedProminent)
         .tint(isStopAction ? .red : .accentColor)
         .controlSize(.large)
-        .disabled(store.isWorking)
+        .disabled(store.isWorking && (!isStopAction || store.isStopping))
     }
 
     private var shutdownSection: some View {

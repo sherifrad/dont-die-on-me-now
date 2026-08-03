@@ -34,6 +34,9 @@ final class ScriptSafetyTests: XCTestCase {
         XCTAssertTrue(script.contains("uninstall_login_launcher.sh"))
         XCTAssertTrue(script.contains("install_privileged_helper.sh"))
         XCTAssertTrue(script.contains("install_opencode_plugin.sh"))
+        XCTAssertTrue(script.contains("remove_duplicate_apps"))
+        XCTAssertTrue(script.contains("CFBundleIdentifier"))
+        XCTAssertTrue(script.contains("LSREGISTER\" -u"))
     }
 
     func testRootInstallScriptDelegatesToAppInstaller() throws {
@@ -125,6 +128,7 @@ final class ScriptSafetyTests: XCTestCase {
         XCTAssertTrue(helper.contains("/sbin/shutdown -h -q"))
         XCTAssertTrue(helper.contains("/sbin/shutdown -c"))
         XCTAssertTrue(helper.contains("quiet_shutdown"))
+        XCTAssertTrue(helper.contains("/sbin/shutdown -h -q"))
         XCTAssertTrue(opencodePlugin.contains("session.idle"))
         XCTAssertTrue(opencodePlugin.contains("allActiveTasks"))
         XCTAssertTrue(opencodePlugin.contains("trackedSessionIDs"))
@@ -173,6 +177,7 @@ final class ScriptSafetyTests: XCTestCase {
         XCTAssertTrue(buildScript.contains("BUILD_ARCHITECTURES=(arm64 x86_64)"))
         XCTAssertTrue(buildScript.contains("/usr/bin/uname -m"))
         XCTAssertTrue(buildScript.contains("BUILD_CONFIGURATION=\"release\""))
+        XCTAssertTrue(buildScript.contains(".metadata_never_index"))
     }
 
     func testShellScriptsUseStrictMode() throws {
